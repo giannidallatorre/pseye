@@ -1,0 +1,18 @@
+# Python dependencies for the PS3 Eye -> webcam bridge.
+#
+# pseyepy is not on PyPI in a usable form for macOS: install it from git.
+# It vendors PS3EYEDriver (the C driver) and builds it against libusb.
+#
+# h5py is not declared by pseyepy but is required: pseyepy/__init__.py imports
+# pseyepy.io, which imports h5py at module level. Without it, `import pseyepy`
+# fails with ModuleNotFoundError.
+#
+#   brew install libusb
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#
+pseyepy @ git+https://github.com/bensondaled/pseyepy.git@79cf2fb14ed2673396d9f0461f0f0c41a0751ceb
+h5py==3.16.0
+pyvirtualcam==0.15.0
+Pillow==12.3.0
+numpy==2.5.3

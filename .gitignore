@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime state written by the scripts
+vcam.log
+.paused
+
+# macOS
+.DS_Store
+
+# Personal Italian notes, not part of the published repo
+README.it.md
