@@ -8,8 +8,9 @@ this script feeds the webcam on its own.
 
 Performance notes
 -----------------
-* The PS Eye does 640x480 @ 60 fps (and 320x240 @ 120 fps). The default here
-  is 60 fps; use --fps 30 if the USB bus is congested or you want less CPU.
+* The PS Eye does 640x480 @ 60 fps (and up to 125 fps at 320x240). The default
+  here is 60 fps; use --fps 30 if the USB bus is congested or you want less CPU.
+  The driver rounds the requested fps down to the nearest rate it supports.
 * The PS3EYEDriver defaults are all-manual (gain=20, exposure=128, AWB off),
   which gives a dark, red-tinted image. Auto gain + auto white balance are
   enabled by default here because they look much better.

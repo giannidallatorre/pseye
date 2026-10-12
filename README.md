@@ -20,11 +20,12 @@ so Apple Silicon should work too, but it has not been tested there.
 
 ## Requirements
 
-- macOS 14 or later
+- macOS 13 or later — pyvirtualcam drives the OBS Camera Extension through
+  `CMIOExtension`, which it selects from macOS 13 (Darwin 22) onwards
 - [OBS Studio](https://obsproject.com/) installed, with its virtual camera
   activated once (see below)
 - `libusb` (`brew install libusb`)
-- Python 3.9+
+- Python 3.12+ — required by the pinned `numpy`
 
 ## Install
 
@@ -61,7 +62,7 @@ For a foreground run with live fps stats, use `./vcam.sh` (Ctrl-C to stop).
 ```bash
 ./pseye on --fps 30                            # less USB bandwidth / less CPU
 ./pseye on --gray                              # grayscale (1/3 of the data)
-./pseye on --width 320 --height 240 --fps 120  # slow motion
+./pseye on --width 320 --height 240 --fps 125  # slow motion
 ./pseye on --no-auto-gain --gain 40            # manual gain (0-63)
 ./pseye on --exposure 200                      # manual exposure (0-255)
 ./pseye on --no-auto-wb --red 140 --blue 150   # manual white balance
@@ -69,7 +70,9 @@ For a foreground run with live fps stats, use `./vcam.sh` (Ctrl-C to stop).
 ```
 
 Defaults: 640x480 @ 60 fps, colour, auto gain and auto white balance on. The
-camera does 640x480 @ 60 fps natively and up to 125 fps at 320x240.
+camera does 640x480 @ 60 fps natively and up to 125 fps at 320x240; `--fps` is
+rounded down to the nearest rate the camera supports (e.g. `--fps 120` gives
+100 fps).
 
 `auto_exposure` is unreliable in this driver (it aborts the process on some
 starts) and is therefore opt-in via `--auto-exposure`.
@@ -233,6 +236,7 @@ curl -s --max-time 3 http://localhost:8090/stream -o /tmp/t.bin && \
 | `led_off.py` | Turns the camera LED off; run by `pseye off` |
 | `mjpeg_server.py` | MJPEG server for an OBS Browser Source; `--index N` selects the camera |
 | `start.sh` | Convenience launcher for the MJPEG server |
+| `requirements.txt` | Pinned Python dependencies (pseyepy from git, pyvirtualcam, Pillow, NumPy, h5py) |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
 
 ## License
