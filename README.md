@@ -52,6 +52,8 @@ project can feed it without OBS running.
 ./pseye status    # show state: ON / ON (no frames) / OFF
 ```
 
+Run `./pseye -h` for all commands and the options accepted by `on`/`toggle`.
+
 `status` reports `ON (no frames)` when the process is alive but the camera is
 not delivering frames — for example when the USB link has fallen back to full
 speed. `pseye on` waits for the first frame before reporting success, and

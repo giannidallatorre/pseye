@@ -7,6 +7,7 @@
 #   pseye status     show the current state
 #   pseye install    auto-start the webcam when the PS Eye is plugged in
 #   pseye uninstall  remove the auto-start
+#   pseye -h         show all commands and the vcam.py options
 #
 # Extra arguments after on/toggle are passed to vcam.py, e.g.
 #   pseye on --fps 30
@@ -32,6 +33,30 @@ UID_NUM="$(id -u)"
 running() { pgrep -f "vcam.py" >/dev/null 2>&1; }
 present() { ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null | grep -q "IOUSBHostInterface@0"; }
 agent_loaded() { launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; }
+
+usage() {
+  cat <<EOF
+PS Eye webcam control.
+
+Usage:
+  pseye on [options]      start the webcam in the background
+  pseye off               stop it (turns the LED off)
+  pseye toggle [options]  flip the current state
+  pseye status            show state: ON / ON (no frames) / OFF
+  pseye install           start the webcam when the PS Eye is plugged in
+  pseye uninstall         remove the auto-start
+  pseye -h, --help        show this help
+
+Options accepted by on/toggle (passed to vcam.py):
+EOF
+  if [[ -x "$PY" ]]; then
+    echo
+    "$PY" "$DIR/vcam.py" --help 2>/dev/null | sed '1,/^options:/d' ||
+      echo "  (run ./vcam.sh --help once the virtualenv is set up)"
+  else
+    echo "  (run ./vcam.sh --help once the virtualenv is set up)"
+  fi
+}
 
 # vcam.py writes .heartbeat every couple of seconds while frames are flowing. A live
 # process with a stale heartbeat means the camera is stuck (e.g. the USB link
@@ -94,9 +119,17 @@ stop() {
 }
 
 case "${1:-status}" in
-  on)  shift; start "$@" ;;
+  on)
+    shift
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then usage; exit 0; fi
+    start "$@"
+    ;;
   off) stop ;;
-  toggle) shift; if running; then stop; else start "$@"; fi ;;
+  toggle)
+    shift
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then usage; exit 0; fi
+    if running; then stop; else start "$@"; fi
+    ;;
   status)
     if running; then
       if heartbeat_fresh; then echo "webcam:     ON"; else echo "webcam:     ON (no frames)"; fi
@@ -158,5 +191,6 @@ EOF
     rm -f "$PLIST"
     echo "auto-start removed."
     ;;
-  *) echo "usage: pseye {on|off|toggle|status|install|uninstall}"; exit 1 ;;
+  -h|--help|help) usage ;;
+  *) echo "usage: pseye {on|off|toggle|status|install|uninstall} (see pseye -h)"; exit 1 ;;
 esac
