@@ -132,10 +132,11 @@ the remaining cancellation callbacks â€” which also need that same event loop â€
 that path can deadlock. It is a separate bug from the use-after-free fixed here
 and is left alone to keep this patch minimal and reviewable.
 
-## Workaround used by this project
+## Use in this project
 
-Until the patch lands upstream, `vcam.py` never calls `Camera.end()`: it exits
-with `os._exit(0)`, which also skips pseyepy's `atexit` handler. The kernel
-releases the USB interface when the process dies, and the next start works
-normally. The LED is then turned off by `led_off.py` from a separate process,
-where the same open/close cycle is reliable (15/15).
+The patch is applied in the pseyepy fork this project pins
+(`giannidallatorre/pseyepy@90894b1`, commit `23624c2`), so `vcam.py` calls
+`Camera.end()` on the way out: it stops the transfers, turns the LED off and
+releases the USB interface. Ten consecutive `pseye off` + `pseye on` cycles are
+clean. `vcam.py` still ends with `os._exit(0)` so that interpreter shutdown can
+never hang.

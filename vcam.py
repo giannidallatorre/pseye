@@ -290,15 +290,17 @@ def main() -> int:
         pass
     finally:
         print(f"[vcam] closed after {time.time() - t0:.1f}s", file=sys.stderr, flush=True)
-        # Do NOT call cam.end() here. PS3EYEDriver's teardown races with its
-        # own transfer thread: close_transfers() calls libusb_cancel_transfer()
-        # while the transfer thread is inside libusb_handle_events_timeout(),
-        # which trips a libusb assertion and aborts the process (SIGABRT,
-        # "Abort trap: 6"). Measured with pyvirtualcam running: 5 crashes out
-        # of 8 shutdowns. Without pyvirtualcam the same teardown is clean
-        # (15/15), which is why the LED is turned off by led_off.py instead,
-        # run by `pseye off` *after* this process is gone.
-        # os._exit(0) also skips pseyepy's atexit handler, which calls end().
+        # cam.end() stops the transfers and turns the LED off (PS3EYECam::stop()
+        # clears the LED register). This used to abort the process: the driver
+        # called libusb_cancel_transfer() on transfers it had already freed,
+        # which tripped a libusb assertion (5 crashes out of 8 shutdowns). The
+        # fix is in the pseyepy fork (23624c2), so the teardown is safe now.
+        try:
+            cam.end()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[vcam] cam.end() failed: {exc}", file=sys.stderr, flush=True)
+        # Still exit hard: it guarantees we never hang in interpreter shutdown
+        # (pseyepy's atexit handler would call end() again, which is a no-op).
         os._exit(0)
     return 0
 

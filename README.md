@@ -251,16 +251,15 @@ Two consequences worth knowing:
 
 - **The LED.** The LED is driven by the camera's own registers
   (`PS3EYECam::start()` sets it, `PS3EYECam::stop()` clears it), and `stop()` is
-  only reached through `Camera.end()`. `vcam.py` cannot call `end()` (see below),
-  so `./pseye off` runs `led_off.py` in a separate process afterwards to turn the
-  LED off.
-- **`Camera.end()` aborts the process.** PS3EYEDriver's teardown calls
-  `libusb_cancel_transfer()` on transfers it has already freed, which trips a
-  libusb assertion (`Abort trap: 6`). Measured: 5 crashes out of 8 shutdowns with
-  pyvirtualcam running, 0 out of 15 without it. `vcam.py` therefore exits with
-  `os._exit(0)`, which also skips pseyepy's `atexit` handler. The kernel releases
-  the USB interface when the process dies and the next start works normally. A
-  fix for the driver is in [`patches/`](patches/).
+  only reached through `Camera.end()`. `vcam.py` calls `cam.end()` on the way
+  out, so `./pseye off` turns the LED off and releases the USB interface.
+- **`Camera.end()` used to abort the process.** PS3EYEDriver's teardown called
+  `libusb_cancel_transfer()` on transfers it had already freed, which tripped a
+  libusb assertion (`Abort trap: 6`): 5 crashes out of 8 shutdowns with
+  pyvirtualcam running. The fix is in the pseyepy fork this project pins
+  (`23624c2`, also in [`patches/`](patches/)); with it, 10 out of 10 on/off
+  cycles are clean. `vcam.py` still exits with `os._exit(0)` so that shutdown
+  can never hang.
 - **Zoom caches the camera list** at launch: restart Zoom after changing which
   cameras are available.
 - **`vcam.sh` refuses to start** if another process already holds the camera's
@@ -314,7 +313,6 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 | `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `set` / `autostart` |
 | `vcam.py` | PS Eye → system webcam via pyvirtualcam |
 | `vcam.sh` | Convenience launcher for `vcam.py`, with the in-use guard |
-| `led_off.py` | Turns the camera LED off; run by `pseye off` |
 | `mjpeg_server.py` | MJPEG server for an OBS Browser Source; `--index N` selects the camera |
 | `start.sh` | Convenience launcher for the MJPEG server |
 | `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
