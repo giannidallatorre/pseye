@@ -36,7 +36,9 @@ so Apple Silicon should work too, but it has not been tested there.
 That installs `libusb` with Homebrew (or lets pseyepy build its bundled copy
 when Homebrew is missing, which needs the Xcode Command Line Tools), creates
 `.venv` and installs the pinned dependencies. It is idempotent: run it again
-after a `git pull`.
+after a `git pull`. At the end it trims the virtualenv — numpy's test suite and
+`pip` are removed, which halves it (57 MB → 28 MB); a later `setup` puts `pip`
+back with `ensurepip`.
 
 The equivalent manual steps are:
 
@@ -219,7 +221,8 @@ This mode is the only one that needs **Pillow**, which is therefore not in
 `requirements.txt` (the virtual camera path does not use it):
 
 ```bash
-.venv/bin/pip install Pillow
+.venv/bin/python -m ensurepip --upgrade   # setup trims pip from the venv
+.venv/bin/python -m pip install Pillow
 ```
 
 ## How it works
@@ -281,7 +284,7 @@ Two consequences worth knowing:
 | `pyvirtualcam`: *OBS Virtual Camera is not installed* | same as above: OBS must be installed and its virtual camera activated once |
 | Zoom does not see the webcam you just started | Zoom caches the camera list: restart Zoom |
 | OBS Browser Source is black | server not running → `lsof -nP -iTCP:8090 -sTCP:LISTEN`; or right-click the source → *Refresh* |
-| `mjpeg_server.py`: *needs Pillow* | `.venv/bin/pip install Pillow` (only the MJPEG mode uses it) |
+| `mjpeg_server.py`: *needs Pillow* | `.venv/bin/python -m ensurepip --upgrade && .venv/bin/python -m pip install Pillow` (only the MJPEG mode uses it) |
 | No audio in Zoom | wrong microphone: pick `USB Camera-B4.09.24.1` |
 | Double audio / echo | both `Mic/Aux` (system mic) and the PS Eye are active: pick one |
 | Stuttering video | lower `--quality`, or switch to `--res qvga` / `--fps 30` |

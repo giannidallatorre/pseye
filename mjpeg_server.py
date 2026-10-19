@@ -2,7 +2,7 @@
 """PS3 Eye -> MJPEG server, meant for an OBS Browser Source.
 
 Needs Pillow (optional dependency, only this script uses it):
-    .venv/bin/pip install Pillow
+    .venv/bin/python -m ensurepip --upgrade && .venv/bin/python -m pip install Pillow
 
 Usage:
     ./start.sh [--port 8090] [--fps 30] [--res vga|qvga] [--quality 80] [--index N]
@@ -161,7 +161,9 @@ def main():
     except ImportError:
         print(
             "ERROR: the MJPEG server needs Pillow to encode JPEG frames.\n"
-            "       Install it with:  .venv/bin/pip install Pillow",
+            "       Install it with:\n"
+            "         .venv/bin/python -m ensurepip --upgrade\n"
+            "         .venv/bin/python -m pip install Pillow",
             file=sys.stderr,
         )
         return 1

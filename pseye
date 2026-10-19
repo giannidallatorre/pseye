@@ -278,6 +278,19 @@ doctor() {
   (( failures == 0 ))
 }
 
+# The venv is local and gitignored, so trimming it costs nothing. numpy ships
+# its whole test suite (16 MB) and pip (13 MB) is only needed to install: both
+# are removed once setup is done, which halves the venv (57 MB -> ~28 MB).
+# numpy itself cannot be slimmed further: pseyepy returns numpy arrays and
+# pyvirtualcam only accepts them, so it is a hard dependency.
+slim() {
+  local site
+  site="$("$PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" || return 0
+  find "$site/numpy" -type d -name tests -prune -exec rm -rf {} + 2>/dev/null
+  rm -rf "$site"/pip "$site"/pip-*.dist-info
+  echo "venv:         trimmed to $(du -sm "$DIR/.venv" | cut -f1) MB (numpy tests and pip removed)"
+}
+
 # One command instead of the README's three: libusb, the virtualenv and the
 # pinned dependencies. Activating the OBS virtual camera stays manual because
 # it happens inside OBS.
@@ -324,6 +337,11 @@ setup() {
   fi
 
   echo "dependencies: installing from requirements.txt (pseyepy is compiled, ~1 min)"
+  # slim() removes pip at the end, so a re-run has to put it back first.
+  if ! "$PY" -m pip --version >/dev/null 2>&1; then
+    echo "dependencies: pip is missing (trimmed by a previous setup), restoring it"
+    "$PY" -m ensurepip --upgrade >/dev/null
+  fi
   "$PY" -m pip install --quiet --upgrade pip
   "$PY" -m pip install -r "$DIR/requirements.txt"
 
@@ -331,6 +349,8 @@ setup() {
     echo "setup failed: pseyepy or pyvirtualcam does not import (see above)" >&2
     return 1
   fi
+
+  slim
 
   echo
   echo "Setup complete. One manual step is left: activate the OBS virtual camera"
