@@ -1,4 +1,4 @@
-# pseye-macos
+# PSEye — PS3 Eye as a webcam on macOS
 
 > **Fighting obsolescence, one USB device at a time.** The PS Eye shipped in
 > 2007; this keeps it a first-class webcam on a 2026 Mac, because good hardware
