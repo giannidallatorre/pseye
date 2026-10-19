@@ -25,7 +25,7 @@ so Apple Silicon should work too, but it has not been tested there.
 - [OBS Studio](https://obsproject.com/) installed, with its virtual camera
   activated once (see below)
 - `libusb` (`brew install libusb`)
-- Python 3.12+ — required by the pinned `numpy`
+- Python 3.12 to 3.14 — required by pyvirtualcam and numpy
 
 ## Install
 
@@ -236,7 +236,7 @@ curl -s --max-time 3 http://localhost:8090/stream -o /tmp/t.bin && \
 | `led_off.py` | Turns the camera LED off; run by `pseye off` |
 | `mjpeg_server.py` | MJPEG server for an OBS Browser Source; `--index N` selects the camera |
 | `start.sh` | Convenience launcher for the MJPEG server |
-| `requirements.txt` | Pinned Python dependencies (pseyepy from git, pyvirtualcam, Pillow, NumPy, h5py) |
+| `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, Pillow, NumPy) |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
 
 ## License
