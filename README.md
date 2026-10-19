@@ -155,7 +155,8 @@ persists like any other setting.
 bootstraps it into your GUI session. The agent runs `./pseye watch` every 5
 seconds, which starts the webcam when the camera is present and stops it
 (turning the LED off) when it is unplugged. It stays idle while `./pseye off` is
-in effect; `./pseye on` clears that.
+in effect; `./pseye on` clears that, and so does `./pseye autostart install`,
+since installing the auto-start means you want it to start by itself.
 
 The plist contains the absolute path of this directory, so re-run
 `./pseye autostart install` if you move the folder.

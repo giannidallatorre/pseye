@@ -439,11 +439,18 @@ case "${1:-status}" in
   </array>
   <key>StartInterval</key><integer>5</integer>
   <key>RunAtLoad</key><true/>
+  <!-- watch starts vcam.sh in the background and exits. Without this,
+       launchd kills the whole process group when the job exits, so the
+       webcam would die a moment after being started. -->
+  <key>AbandonProcessGroup</key><true/>
 </dict>
 </plist>
 EOF
         launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
         launchctl bootstrap "gui/$UID_NUM" "$PLIST"
+        # Installing the auto-start means "I want it to start by itself", so a
+        # previous manual `pseye off` must not keep it off.
+        rm -f "$PAUSE"
         echo "auto-start installed: the webcam starts when you plug in the PS Eye."
         ;;
       remove)
