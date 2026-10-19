@@ -230,6 +230,11 @@ ffmpeg -y -f avfoundation -framerate 60 -video_size 1920x1080 -i "${IDX}:none" -
 # MJPEG mode: count JPEG frames in 3 seconds
 curl -s --max-time 3 http://localhost:8090/stream -o /tmp/t.bin && \
   python3 -c "d=open('/tmp/t.bin','rb').read(); print('frames:', d.count(b'\xff\xd8\xff'))"
+
+# audio: record 3 s from the PS Eye microphone and measure the level
+AUDIO=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "USB Camera-B4.09.24.1" | sed -E 's/.*\[([0-9]+)\].*/\1/')
+ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
+  ffmpeg -i /tmp/a.wav -af volumedetect -f null - 2>&1 | grep volume
 ```
 
 ## Files
