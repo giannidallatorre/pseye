@@ -8,6 +8,7 @@ venv/
 vcam.log
 .paused
 .heartbeat
+.settings
 
 # Editors and IDEs
 *.swp

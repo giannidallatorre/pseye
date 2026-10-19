@@ -45,6 +45,128 @@ def write_heartbeat() -> None:
         pass
 
 
+# Live-adjustable image controls. `pseye set` writes this file and sends
+# SIGHUP; vcam.py re-reads it between frames, so no restart is needed.
+SETTINGS = os.environ.get(
+    "PSEYE_SETTINGS",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".settings"),
+)
+
+# .settings key -> Camera attribute. The keys match the vcam.py flags.
+LIVE_PARAMS = {
+    "auto-gain": "auto_gain",
+    "gain": "gain",
+    "auto-exposure": "auto_exposure",
+    "exposure": "exposure",
+    "auto-wb": "auto_whitebalance",
+    "red": "red_balance",
+    "green": "green_balance",
+    "blue": "blue_balance",
+    "flip-h": "hflip",
+    "flip-v": "vflip",
+}
+BOOL_PARAMS = {"auto-gain", "auto-exposure", "auto-wb", "flip-h", "flip-v"}
+# Auto flags first, then the values they gate.
+PARAM_ORDER = ["auto-gain", "auto-exposure", "auto-wb",
+               "gain", "exposure", "red", "green", "blue",
+               "flip-h", "flip-v"]
+DEFAULTS = {"auto-gain": "on", "auto-exposure": "off", "auto-wb": "on",
+            "flip-h": "off", "flip-v": "off"}
+
+
+def read_settings() -> dict:
+    values = {}
+    try:
+        with open(SETTINGS) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                values[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return values
+
+
+def write_settings(values: dict) -> None:
+    try:
+        with open(SETTINGS, "w") as fh:
+            for key in PARAM_ORDER:
+                if key in values:
+                    fh.write(f"{key}={values[key]}\n")
+    except OSError:
+        pass
+
+
+def read_baseline(cam: Camera) -> dict:
+    """The driver's own defaults, read before we touch anything."""
+    return {key: int(getattr(cam, LIVE_PARAMS[key])[0])
+            for key in ("gain", "exposure", "red", "green", "blue")}
+
+
+def apply_settings(cam: Camera, values: dict, baseline: dict) -> None:
+    # A manual value is meaningless while its auto flag is on: the driver would
+    # either ignore it or silently switch the auto mode off.
+    auto_gain = values.get("auto-gain", DEFAULTS["auto-gain"]) == "on"
+    auto_exposure = values.get("auto-exposure", DEFAULTS["auto-exposure"]) == "on"
+    auto_wb = values.get("auto-wb", DEFAULTS["auto-wb"]) == "on"
+
+    # Turning an auto mode back on does not clear the manual registers in the
+    # driver, so the image would keep the last manual look. Restore the
+    # baseline values first, while the auto mode is still off.
+    if auto_gain:
+        cam.gain = baseline["gain"]
+    if auto_exposure:
+        cam.exposure = baseline["exposure"]
+    if auto_wb:
+        cam.auto_whitebalance = False
+        for key in ("red", "green", "blue"):
+            setattr(cam, LIVE_PARAMS[key], baseline[key])
+
+    for key in PARAM_ORDER:
+        if key not in values:
+            continue
+        if key == "gain" and auto_gain:
+            continue
+        if key == "exposure" and auto_exposure:
+            continue
+        if key in ("red", "green", "blue") and auto_wb:
+            continue
+        raw = values[key]
+        if key in BOOL_PARAMS:
+            value = raw.lower() in ("1", "on", "true", "yes")
+        else:
+            value = int(raw)
+        setattr(cam, LIVE_PARAMS[key], value)
+
+
+def cli_overrides(args: argparse.Namespace) -> dict:
+    """Only the controls explicitly requested on the command line."""
+    values = {}
+    if args.no_auto_gain:
+        values["auto-gain"] = "off"
+    if args.gain is not None:
+        values["gain"] = str(args.gain)
+        values["auto-gain"] = "off"
+    if args.auto_exposure:
+        values["auto-exposure"] = "on"
+    if args.exposure is not None:
+        values["exposure"] = str(args.exposure)
+        values["auto-exposure"] = "off"
+    if args.no_auto_wb:
+        values["auto-wb"] = "off"
+    for key, value in (("red", args.red), ("green", args.green), ("blue", args.blue)):
+        if value is not None:
+            values[key] = str(value)
+            values["auto-wb"] = "off"
+    if args.flip_h:
+        values["flip-h"] = "on"
+    if args.flip_v:
+        values["flip-v"] = "on"
+    return values
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="PS Eye -> system webcam (pyvirtualcam / OBS Camera Extension)"
@@ -74,32 +196,6 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def apply_controls(cam: Camera, args: argparse.Namespace) -> None:
-    """Push the requested image controls onto the camera."""
-    if not args.no_auto_gain:
-        cam.auto_gain = True
-    if args.gain is not None:
-        cam.auto_gain = False
-        cam.gain = args.gain
-    if args.auto_exposure:
-        cam.auto_exposure = True
-    if args.exposure is not None:
-        cam.auto_exposure = False
-        cam.exposure = args.exposure
-    if not args.no_auto_wb:
-        cam.auto_whitebalance = True
-    for name, value in (("red_balance", args.red),
-                        ("green_balance", args.green),
-                        ("blue_balance", args.blue)):
-        if value is not None:
-            cam.auto_whitebalance = False
-            setattr(cam, name, value)
-    if args.flip_h:
-        cam.hflip = True
-    if args.flip_v:
-        cam.vflip = True
-
-
 def main() -> int:
     args = build_parser().parse_args()
 
@@ -110,6 +206,15 @@ def main() -> int:
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, _on_term)
+
+    # `pseye set` rewrites .settings and sends SIGHUP; the loop below applies it.
+    reload_settings = False
+
+    def _on_hup(_signum, _frame):
+        nonlocal reload_settings
+        reload_settings = True
+
+    signal.signal(signal.SIGHUP, _on_hup)
 
     found = cam_count()
     if found == 0:
@@ -123,7 +228,13 @@ def main() -> int:
     resolution = Camera.RES_LARGE if args.width >= 640 else Camera.RES_SMALL
     colour = not args.gray
     cam = Camera(ids=[args.camera], resolution=resolution, fps=args.fps, colour=colour)
-    apply_controls(cam, args)
+    baseline = read_baseline(cam)
+    # Saved settings first, then the flags given on this command line. They are
+    # applied after the first frame: enabling AWB/AGC before the sensor has
+    # produced one leaves them in a state where they never converge.
+    settings = {**DEFAULTS, **read_settings()}
+    settings.update(cli_overrides(args))
+    pending = True
 
     frames = 0
     t0 = time.time()
@@ -143,6 +254,20 @@ def main() -> int:
                 frame, _ts = cam.read()
                 if frame is None:
                     continue
+                if pending:
+                    apply_settings(cam, settings, baseline)
+                    write_settings(settings)
+                    pending = False
+                if reload_settings:
+                    reload_settings = False
+                    try:
+                        values = {**DEFAULTS, **read_settings()}
+                        apply_settings(cam, values, baseline)
+                        write_settings(values)
+                        print("[vcam] settings reloaded", file=sys.stderr, flush=True)
+                    except (OSError, ValueError) as exc:
+                        print(f"[vcam] settings reload failed: {exc}",
+                              file=sys.stderr, flush=True)
                 # pseyepy already hands us a contiguous array; this is a no-op
                 # guard for the odd case where it does not.
                 if not frame.flags["C_CONTIGUOUS"]:

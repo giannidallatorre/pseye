@@ -84,6 +84,32 @@ rounded down to the nearest rate the camera supports (e.g. `--fps 120` gives
 `auto_exposure` is unreliable in this driver (it aborts the process on some
 starts) and is therefore opt-in via `--auto-exposure`.
 
+### Live image controls
+
+The image controls can be changed while the webcam is running, without a
+restart:
+
+```bash
+./pseye set gain 40          # manual gain (0-63), turns auto gain off
+./pseye set exposure 200     # manual exposure (0-255), turns auto exposure off
+./pseye set auto-wb off      # or on
+./pseye set red 140          # manual white balance (0-255), turns auto WB off
+./pseye set flip-h on        # or flip-v
+./pseye set                  # show the current values
+./pseye set reset            # back to the defaults
+```
+
+`pseye set` writes `.settings` and sends `SIGHUP`; `vcam.py` applies the new
+values between frames, and they survive a restart. `--camera`, `--width`,
+`--height`, `--fps` and `--gray` still need `pseye off` + `pseye on`, because
+they change the USB stream or the virtual camera format.
+
+`pseye set reset` restores the driver defaults (gain 20, exposure 128, neutral
+balance, auto gain and auto WB on). Turning an auto mode back on also restores
+those baseline values first, because the driver keeps the last manual registers
+otherwise. `auto-exposure` is not available here: it is unstable in this driver
+and stays opt-in via `--auto-exposure`.
+
 ### Auto-start on plug-in
 
 ```bash

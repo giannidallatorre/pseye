@@ -7,6 +7,7 @@
 #   pseye status     show the current state
 #   pseye install    auto-start the webcam when the PS Eye is plugged in
 #   pseye uninstall  remove the auto-start
+#   pseye set        change image controls live, without restarting
 #   pseye -h         show all commands and the vcam.py options
 #
 # Extra arguments after on/toggle are passed to vcam.py, e.g.
@@ -28,6 +29,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$DIR/vcam.log"
 PAUSE="$DIR/.paused"
 HEARTBEAT="$DIR/.heartbeat"
+SETTINGS="$DIR/.settings"
 UID_NUM="$(id -u)"
 
 running() { pgrep -f "vcam.py" >/dev/null 2>&1; }
@@ -45,6 +47,7 @@ Usage:
   pseye status            show state: ON / ON (no frames) / OFF
   pseye install           start the webcam when the PS Eye is plugged in
   pseye uninstall         remove the auto-start
+  pseye set [key value]   change image controls live (no restart); no args lists them
   pseye -h, --help        show this help
 
 Options accepted by on/toggle (passed to vcam.py):
@@ -56,6 +59,36 @@ EOF
   else
     echo "  (run ./vcam.sh --help once the virtualenv is set up)"
   fi
+}
+
+# Live image controls: `pseye set` edits .settings and sends SIGHUP, which
+# vcam.py picks up between frames. No restart needed.
+settings_put() {
+  local key="$1" value="$2" tmp
+  tmp="$(mktemp)"
+  if [[ -f "$SETTINGS" ]]; then
+    grep -v "^$key=" "$SETTINGS" >"$tmp" || true
+  fi
+  printf '%s=%s\n' "$key" "$value" >>"$tmp"
+  mv "$tmp" "$SETTINGS"
+}
+
+settings_show() {
+  if [[ -f "$SETTINGS" ]]; then
+    cat "$SETTINGS"
+  else
+    echo "no settings file (defaults: auto-gain=on auto-wb=on auto-exposure=off)"
+  fi
+}
+
+settings_defaults() {
+  cat > "$SETTINGS" <<'EOF'
+auto-gain=on
+auto-exposure=off
+auto-wb=on
+flip-h=off
+flip-v=off
+EOF
 }
 
 # vcam.py writes .heartbeat every couple of seconds while frames are flowing. A live
@@ -164,6 +197,55 @@ case "${1:-status}" in
       fi
     fi
     ;;
+  set)
+    shift
+    if [[ $# -eq 0 ]]; then settings_show; exit 0; fi
+    if [[ "$1" == "reset" ]]; then
+      settings_defaults
+      if running; then pkill -HUP -f "vcam.py" 2>/dev/null || true; fi
+      echo "PS Eye: settings reset to defaults"
+      exit 0
+    fi
+    key="$1"
+    value="${2:-}"
+    case "$key" in
+      gain)
+        [[ "$value" =~ ^[0-9]+$ ]] && (( value <= 63 )) || { echo "gain must be 0-63"; exit 1; }
+        settings_put gain "$value"
+        settings_put auto-gain off
+        ;;
+      exposure)
+        [[ "$value" =~ ^[0-9]+$ ]] && (( value <= 255 )) || { echo "exposure must be 0-255"; exit 1; }
+        settings_put exposure "$value"
+        settings_put auto-exposure off
+        ;;
+      red|green|blue)
+        [[ "$value" =~ ^[0-9]+$ ]] && (( value <= 255 )) || { echo "$key must be 0-255"; exit 1; }
+        settings_put "$key" "$value"
+        settings_put auto-wb off
+        ;;
+      auto-gain|auto-wb|flip-h|flip-v)
+        case "$value" in
+          on|true|1|yes) value=on ;;
+          off|false|0|no) value=off ;;
+          *) echo "$key must be on or off"; exit 1 ;;
+        esac
+        settings_put "$key" "$value"
+        ;;
+      *)
+        echo "unknown setting: $key"
+        echo "settings: gain exposure auto-gain auto-wb red green blue flip-h flip-v"
+        echo "(auto-exposure is CLI-only: it is unstable in this driver)"
+        exit 1
+        ;;
+    esac
+    if running; then
+      pkill -HUP -f "vcam.py" 2>/dev/null || true
+      echo "PS Eye: $key=$value"
+    else
+      echo "PS Eye: $key=$value (saved, applies at next start)"
+    fi
+    ;;
   install)
     mkdir -p "$(dirname "$PLIST")"
     cat > "$PLIST" <<EOF
@@ -192,5 +274,5 @@ EOF
     echo "auto-start removed."
     ;;
   -h|--help|help) usage ;;
-  *) echo "usage: pseye {on|off|toggle|status|install|uninstall} (see pseye -h)"; exit 1 ;;
+  *) echo "usage: pseye {on|off|toggle|status|set|install|uninstall} (see pseye -h)"; exit 1 ;;
 esac
