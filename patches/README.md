@@ -26,6 +26,7 @@ git apply -p1 /path/to/0001-fix-transfer-teardown-use-after-free.patch
 pseyepy (from a checkout of https://github.com/bensondaled/pseyepy):
 
 ```bash
+cd pseyepy
 git apply -p1 /path/to/0002-fix-transfer-teardown-use-after-free-pseyepy.patch
 ```
 
