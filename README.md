@@ -147,26 +147,26 @@ persists like any other setting.
 ### Auto-start on plug-in
 
 ```bash
-./pseye install     # LaunchAgent: start the webcam when the PS Eye is plugged in
-./pseye uninstall   # remove it
+./pseye autostart install   # LaunchAgent: start the webcam when the PS Eye is plugged in
+./pseye autostart remove    # remove it
 ```
 
-`install` writes `~/Library/LaunchAgents/com.pseye.watch.plist` and bootstraps
-it into your GUI session. The agent runs `./pseye watch` every 5 seconds, which
-starts the webcam when the camera is present and stops it (turning the LED off)
-when it is unplugged. It stays idle while `./pseye off` is in effect; `./pseye on`
-clears that.
+`autostart install` writes `~/Library/LaunchAgents/com.pseye.watch.plist` and
+bootstraps it into your GUI session. The agent runs `./pseye watch` every 5
+seconds, which starts the webcam when the camera is present and stops it
+(turning the LED off) when it is unplugged. It stays idle while `./pseye off` is
+in effect; `./pseye on` clears that.
 
 The plist contains the absolute path of this directory, so re-run
-`./pseye install` if you move the folder.
+`./pseye autostart install` if you move the folder.
 
 ### Uninstall
 
 ```bash
-./pseye off            # stop the webcam (also turns the LED off)
-./pseye uninstall      # remove the LaunchAgent
-rm -rf .venv           # remove the virtualenv
-rm -f vcam.log .paused # remove runtime state
+./pseye off               # stop the webcam (also turns the LED off)
+./pseye autostart remove  # remove the LaunchAgent
+rm -rf .venv              # remove the virtualenv
+rm -f vcam.log .paused    # remove runtime state
 ```
 
 Nothing is installed system-wide: no kext, no DAL plugin, no files outside this
@@ -311,7 +311,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 
 | File | Purpose |
 |---|---|
-| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `install` / `uninstall` |
+| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `set` / `autostart` |
 | `vcam.py` | PS Eye → system webcam via pyvirtualcam |
 | `vcam.sh` | Convenience launcher for `vcam.py`, with the in-use guard |
 | `led_off.py` | Turns the camera LED off; run by `pseye off` |

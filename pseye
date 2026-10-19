@@ -7,8 +7,8 @@
 #   pseye status     show the current state
 #   pseye doctor     check the whole chain (python, libusb, camera, USB, OBS)
 #   pseye setup      install libusb and the Python dependencies in one step
-#   pseye install    auto-start the webcam when the PS Eye is plugged in
-#   pseye uninstall  remove the auto-start
+#   pseye autostart install  start the webcam when the PS Eye is plugged in
+#   pseye autostart remove   remove the auto-start
 #   pseye set        change image controls live, without restarting
 #   pseye -h         show all commands and the vcam.py options
 #
@@ -88,16 +88,16 @@ usage() {
 PS Eye webcam control.
 
 Usage:
-  pseye on [options]      start the webcam in the background
-  pseye off               stop it (turns the LED off)
-  pseye toggle [options]  flip the current state
-  pseye status            show state: ON / ON (no frames) / OFF
-  pseye doctor            check python, libusb, camera, USB link, OBS extension
-  pseye setup             install libusb and the Python dependencies (one step)
-  pseye install           start the webcam when the PS Eye is plugged in
-  pseye uninstall         remove the auto-start
-  pseye set [key value]   change image controls live (no restart); no args lists them
-  pseye -h, --help        show this help
+  pseye on [options]       start the webcam in the background
+  pseye off                stop it (turns the LED off)
+  pseye toggle [options]   flip the current state
+  pseye status             show state: ON / ON (no frames) / OFF
+  pseye doctor             check python, libusb, camera, USB link, OBS extension
+  pseye setup              install libusb and the Python dependencies (one step)
+  pseye autostart install  start the webcam when the PS Eye is plugged in
+  pseye autostart remove   remove the auto-start
+  pseye set [key value]    change image controls live (no restart); no args lists them
+  pseye -h, --help         show this help
 
 Options accepted by on/toggle (passed to vcam.py):
 EOF
@@ -432,9 +432,11 @@ case "${1:-status}" in
       echo "PS Eye: $key=$value (saved, applies at next start)"
     fi
     ;;
-  install)
-    mkdir -p "$(dirname "$PLIST")"
-    cat > "$PLIST" <<EOF
+  autostart)
+    case "${2:-}" in
+      install)
+        mkdir -p "$(dirname "$PLIST")"
+        cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -450,15 +452,21 @@ case "${1:-status}" in
 </dict>
 </plist>
 EOF
-    launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
-    launchctl bootstrap "gui/$UID_NUM" "$PLIST"
-    echo "auto-start installed: the webcam starts when you plug in the PS Eye."
-    ;;
-  uninstall)
-    launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
-    rm -f "$PLIST"
-    echo "auto-start removed."
+        launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+        launchctl bootstrap "gui/$UID_NUM" "$PLIST"
+        echo "auto-start installed: the webcam starts when you plug in the PS Eye."
+        ;;
+      remove)
+        launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+        rm -f "$PLIST"
+        echo "auto-start removed."
+        ;;
+      *)
+        echo "usage: pseye autostart {install|remove}"
+        exit 1
+        ;;
+    esac
     ;;
   -h|--help|help) usage ;;
-  *) echo "usage: pseye {on|off|toggle|status|doctor|setup|set|install|uninstall} (see pseye -h)"; exit 1 ;;
+  *) echo "usage: pseye {on|off|toggle|status|doctor|setup|set|autostart} (see pseye -h)"; exit 1 ;;
 esac
