@@ -56,8 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="capture fps: 15/30/40/50/60 at 640x480, up to 125 at 320x240 (default: 60)")
     p.add_argument("--gray", action="store_true",
                    help="grayscale output (1/3 of the data, no colour conversion)")
-    p.add_argument("--stats", type=float, default=5.0,
-                   help="seconds between fps log lines, 0 to disable (default: 5)")
+    p.add_argument("--stats", type=float, default=0.0,
+                   help="seconds between fps log lines, 0 to disable (default: 0)")
 
     img = p.add_argument_group("image controls")
     img.add_argument("--no-auto-gain", action="store_true", help="disable auto gain")

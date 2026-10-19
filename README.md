@@ -60,7 +60,7 @@ speed. `pseye on` waits for the first frame before reporting success, and
 Then in Zoom: **Video** → `OBS Virtual Camera`, **Microphone** →
 `USB Camera-B4.09.24.1`.
 
-For a foreground run with live fps stats, use `./vcam.sh` (Ctrl-C to stop).
+For a foreground run, use `./vcam.sh` (Ctrl-C to stop); add `--stats 5` for live fps stats.
 
 ### Options
 
