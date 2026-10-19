@@ -7,7 +7,15 @@
 # Usage:  ./vcam.sh [--fps 60] [--gray] [--stats 5] ...
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY="$DIR/.venv/bin/python"
+PY="${PSEYE_PYTHON:-$DIR/.venv/bin/python}"
+
+if [[ ! -x "$PY" ]]; then
+  echo "ERROR: Python environment not found at $PY" >&2
+  echo "       Set up the virtualenv first:" >&2
+  echo "         python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+  exit 1
+fi
+
 
 # Guard: the PS Eye must not already be claimed by another process, otherwise
 # pseyepy segfaults on open. Interface 0 is the video interface; the audio

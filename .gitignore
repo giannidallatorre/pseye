@@ -8,8 +8,19 @@ venv/
 vcam.log
 .paused
 
+# Editors and IDEs
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
 # macOS
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
 
 # Personal Italian notes, not part of the published repo
 README.it.md
+

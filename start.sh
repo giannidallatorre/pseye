@@ -7,6 +7,15 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="${PSEYE_PYTHON:-$DIR/.venv/bin/python}"
+
+if [[ ! -x "$PY" ]]; then
+  echo "ERROR: Python environment not found at $PY" >&2
+  echo "       Set up the virtualenv first:" >&2
+  echo "         python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+  exit 1
+fi
+
 PORT=8090
 for ((i = 1; i <= $#; i++)); do
   if [[ "${!i}" == "--port" ]]; then
@@ -26,4 +35,4 @@ echo "In OBS: + -> Browser -> URL http://localhost:$PORT"
 echo "Then: Start Virtual Camera -> in Zoom pick 'OBS Virtual Camera'."
 echo "Ctrl-C to quit."
 echo
-exec "$DIR/.venv/bin/python" "$DIR/mjpeg_server.py" "$@"
+exec "$PY" "$DIR/mjpeg_server.py" "$@"
