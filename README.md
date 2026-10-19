@@ -170,10 +170,10 @@ directly through its `obs_cmioextension` backend.
 
 Two consequences worth knowing:
 
-- The OBS Camera Extension exposes a single mode, **1920x1080 @ 60**. The PS
-  Eye's 640x480 is upscaled to 1080p by `libyuv` inside pyvirtualcam, which also
-  does the RGB→UYVY conversion in C. There is no way to make the virtual camera
-  output 640x480.
+- The OBS Camera Extension advertises a single mode, **1920x1080 @ 60**, but it
+  does not upscale: it forwards the buffer pyvirtualcam sends, so a 640x480
+  client produces 640x480 frames (measured with ffmpeg). The only conversion is
+  RGB→UYVY, done in C by `libyuv` inside pyvirtualcam.
 - The PS Eye's **4-microphone array** is a standard USB Audio Class device and
   macOS exposes it natively as `USB Camera-B4.09.24.1` (4 channels, 16 kHz). No
   driver needed; select it directly in Zoom or route it through OBS.
