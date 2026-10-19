@@ -147,7 +147,11 @@ stop() {
   # vcam.py exits with os._exit(0) and never tells the camera to stop, so the
   # LED would stay on. Turn it off from a separate process, once vcam.py is gone.
   sleep 1
-  "$PY" "$DIR/led_off.py" >/dev/null 2>&1 || true
+  # Only if nothing grabbed the camera in the meantime: opening it while
+  # another process holds it makes pseyepy segfault.
+  if ! running; then
+    ( "$PY" "$DIR/led_off.py" ) >/dev/null 2>&1 || true
+  fi
   echo "PS Eye: OFF"
 }
 
@@ -178,7 +182,9 @@ case "${1:-status}" in
         kill_vcam
         rm -f "$HEARTBEAT"
         sleep 1
-        "$PY" "$DIR/led_off.py" >/dev/null 2>&1 || true
+        if ! running; then
+          ( "$PY" "$DIR/led_off.py" ) >/dev/null 2>&1 || true
+        fi
       fi
       exit 0
     fi
