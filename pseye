@@ -6,6 +6,7 @@
 #   pseye toggle     flip the current state
 #   pseye status     show the current state
 #   pseye doctor     check the whole chain (python, libusb, camera, USB, OBS)
+#   pseye setup      install libusb and the Python dependencies in one step
 #   pseye install    auto-start the webcam when the PS Eye is plugged in
 #   pseye uninstall  remove the auto-start
 #   pseye set        change image controls live, without restarting
@@ -92,6 +93,7 @@ Usage:
   pseye toggle [options]  flip the current state
   pseye status            show state: ON / ON (no frames) / OFF
   pseye doctor            check python, libusb, camera, USB link, OBS extension
+  pseye setup             install libusb and the Python dependencies (one step)
   pseye install           start the webcam when the PS Eye is plugged in
   pseye uninstall         remove the auto-start
   pseye set [key value]   change image controls live (no restart); no args lists them
@@ -280,6 +282,56 @@ doctor() {
   (( failures == 0 ))
 }
 
+# One command instead of the README's three: libusb, the virtualenv and the
+# pinned dependencies. Activating the OBS virtual camera stays manual because
+# it happens inside OBS.
+setup() {
+  local base version
+
+  if command -v brew >/dev/null 2>&1; then
+    if brew list --versions libusb >/dev/null 2>&1; then
+      echo "libusb:       already installed"
+    else
+      echo "libusb:       installing with Homebrew"
+      brew install libusb
+    fi
+  else
+    echo "libusb:       Homebrew not found: pseyepy will build its bundled copy"
+    echo "              (needs the Xcode Command Line Tools: xcode-select --install)"
+  fi
+
+  if [[ -x "$PY" ]]; then
+    echo "python:       reusing $PY"
+  else
+    base="$(command -v python3 || true)"
+    if [[ -z "$base" ]]; then
+      echo "python:       python3 not found (install Python 3.12-3.14)" >&2
+      return 1
+    fi
+    version="$("$base" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+    case "$version" in
+      3.12|3.13|3.14) ;;
+      *) echo "python:       warning: $version is untested (pyvirtualcam and numpy want 3.12-3.14)" ;;
+    esac
+    echo "python:       creating .venv with $base ($version)"
+    "$base" -m venv "$DIR/.venv"
+  fi
+
+  echo "dependencies: installing from requirements.txt (pseyepy is compiled, ~1 min)"
+  "$PY" -m pip install --quiet --upgrade pip
+  "$PY" -m pip install -r "$DIR/requirements.txt"
+
+  if ! "$PY" -c "import pseyepy, pyvirtualcam" 2>/dev/null; then
+    echo "setup failed: pseyepy or pyvirtualcam does not import (see above)" >&2
+    return 1
+  fi
+
+  echo
+  echo "Setup complete. One manual step is left: activate the OBS virtual camera"
+  echo "once (open OBS -> Start Virtual Camera -> Stop Virtual Camera -> quit OBS)."
+  echo "Then run: pseye on"
+}
+
 case "${1:-status}" in
   on)
     shift
@@ -303,6 +355,7 @@ case "${1:-status}" in
     if agent_loaded; then echo "auto-start: installed"; else echo "auto-start: not installed"; fi
     ;;
   doctor) doctor ;;
+  setup) setup ;;
   watch)  # internal: run by launchd every 5s
     if [[ -f "$PAUSE" ]]; then
       if running; then
@@ -407,5 +460,5 @@ EOF
     echo "auto-start removed."
     ;;
   -h|--help|help) usage ;;
-  *) echo "usage: pseye {on|off|toggle|status|doctor|set|install|uninstall} (see pseye -h)"; exit 1 ;;
+  *) echo "usage: pseye {on|off|toggle|status|doctor|setup|set|install|uninstall} (see pseye -h)"; exit 1 ;;
 esac

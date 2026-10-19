@@ -30,6 +30,17 @@ so Apple Silicon should work too, but it has not been tested there.
 ## Install
 
 ```bash
+./pseye setup
+```
+
+That installs `libusb` with Homebrew (or lets pseyepy build its bundled copy
+when Homebrew is missing, which needs the Xcode Command Line Tools), creates
+`.venv` and installs the pinned dependencies. It is idempotent: run it again
+after a `git pull`.
+
+The equivalent manual steps are:
+
+```bash
 brew install libusb
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -51,6 +62,7 @@ project can feed it without OBS running.
 ./pseye toggle    # flip the current state
 ./pseye status    # show state: ON / ON (no frames) / OFF
 ./pseye doctor    # check python, libusb, camera, USB link, OBS extension
+./pseye setup     # install libusb + the Python dependencies (idempotent)
 ```
 
 Run `./pseye -h` for all commands and the options accepted by `on`/`toggle`.
@@ -299,7 +311,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 
 | File | Purpose |
 |---|---|
-| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `install` / `uninstall` |
+| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `install` / `uninstall` |
 | `vcam.py` | PS Eye → system webcam via pyvirtualcam |
 | `vcam.sh` | Convenience launcher for `vcam.py`, with the in-use guard |
 | `led_off.py` | Turns the camera LED off; run by `pseye off` |
