@@ -26,29 +26,66 @@ LABEL="com.pseye.watch"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$DIR/vcam.log"
 PAUSE="$DIR/.paused"
+HEARTBEAT="$DIR/.heartbeat"
 UID_NUM="$(id -u)"
 
 running() { pgrep -f "vcam.py" >/dev/null 2>&1; }
 present() { ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null | grep -q "IOUSBHostInterface@0"; }
 agent_loaded() { launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; }
 
+# vcam.py writes .heartbeat every couple of seconds while frames are flowing. A live
+# process with a stale heartbeat means the camera is stuck (e.g. the USB link
+# fell back to full speed) and must be killed, not just reported as "ON".
+heartbeat_age() {
+  [[ -f "$HEARTBEAT" ]] || { echo 999999; return; }
+  local now mtime
+  now="$(date +%s)"
+  mtime="$(stat -f %m "$HEARTBEAT" 2>/dev/null || stat -c %Y "$HEARTBEAT" 2>/dev/null || echo 0)"
+  echo $((now - mtime))
+}
+heartbeat_fresh() { [[ "$(heartbeat_age)" -le 6 ]]; }
+
+# SIGTERM is not enough when vcam.py is blocked inside cam.read(): Python only
+# runs the signal handler when the interpreter regains control, which never
+# happens if the C++ frame queue is waiting forever. Escalate to SIGKILL.
+kill_vcam() {
+  pkill -TERM -f "vcam.py" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "vcam.py" >/dev/null 2>&1 || return 0
+    sleep 0.2
+  done
+  pkill -KILL -f "vcam.py" 2>/dev/null || true
+  sleep 0.5
+}
+
 start() {
   rm -f "$PAUSE"
-  if running; then echo "PS Eye: already running"; return 0; fi
+  if running; then
+    if heartbeat_fresh; then echo "PS Eye: already running"; return 0; fi
+    echo "PS Eye: process is alive but no frames are arriving; restarting"
+    kill_vcam
+  fi
+  rm -f "$HEARTBEAT"
   if ! present; then echo "PS Eye: not plugged in"; return 1; fi
   nohup "$DIR/vcam.sh" "$@" >"$LOG" 2>&1 &
-  sleep 2
-  if running; then
-    echo "PS Eye: ON  (log: $LOG)"
-  else
-    echo "PS Eye: failed to start, see $LOG"
-    return 1
-  fi
+  # Wait up to 5 s for the first heartbeat: a live process is not enough,
+  # frames must actually be flowing.
+  for _ in $(seq 1 25); do
+    sleep 0.2
+    if running && heartbeat_fresh; then
+      echo "PS Eye: ON  (log: $LOG)"
+      return 0
+    fi
+  done
+  echo "PS Eye: failed to start (no frames), see $LOG"
+  kill_vcam
+  return 1
 }
 
 stop() {
   touch "$PAUSE"
-  pkill -f "vcam.py" 2>/dev/null || true
+  kill_vcam
+  rm -f "$HEARTBEAT"
   # vcam.py exits with os._exit(0) and never tells the camera to stop, so the
   # LED would stay on. Turn it off from a separate process, once vcam.py is gone.
   sleep 1
@@ -61,23 +98,37 @@ case "${1:-status}" in
   off) stop ;;
   toggle) shift; if running; then stop; else start "$@"; fi ;;
   status)
-    if running; then echo "webcam:     ON"; else echo "webcam:     OFF"; fi
+    if running; then
+      if heartbeat_fresh; then echo "webcam:     ON"; else echo "webcam:     ON (no frames)"; fi
+    else
+      echo "webcam:     OFF"
+    fi
     if [[ -f "$PAUSE" ]]; then echo "paused:     yes (manual off)"; else echo "paused:     no"; fi
     if agent_loaded; then echo "auto-start: installed"; else echo "auto-start: not installed"; fi
     ;;
   watch)  # internal: run by launchd every 5s
     if [[ -f "$PAUSE" ]]; then
       if running; then
-        pkill -f "vcam.py" 2>/dev/null || true
+        kill_vcam
+        rm -f "$HEARTBEAT"
         sleep 1
         "$PY" "$DIR/led_off.py" >/dev/null 2>&1 || true
       fi
       exit 0
     fi
     if present; then
-      if ! running; then nohup "$DIR/vcam.sh" >>"$LOG" 2>&1 & fi
+      if ! running; then
+        nohup "$DIR/vcam.sh" >>"$LOG" 2>&1 &
+      elif ! heartbeat_fresh; then
+        # Alive but not producing frames: kill it so the next cycle restarts.
+        kill_vcam
+        rm -f "$HEARTBEAT"
+      fi
     else
-      if running; then pkill -f "vcam.py" 2>/dev/null || true; fi
+      if running; then
+        kill_vcam
+        rm -f "$HEARTBEAT"
+      fi
     fi
     ;;
   install)

@@ -27,6 +27,23 @@ import numpy as np
 import pyvirtualcam
 from pseyepy import Camera, cam_count
 
+# Written every couple of seconds while frames are flowing. `pseye status` and
+# `pseye on` use its mtime to distinguish "process alive" from "camera actually
+# working": a stuck cam.read() leaves the process alive but the heartbeat stale.
+HEARTBEAT = os.environ.get(
+    "PSEYE_HEARTBEAT",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".heartbeat"),
+)
+HEARTBEAT_INTERVAL = 2.0
+
+
+def write_heartbeat() -> None:
+    try:
+        with open(HEARTBEAT, "w") as fh:
+            fh.write(str(time.time()))
+    except OSError:
+        pass
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -111,6 +128,7 @@ def main() -> int:
     frames = 0
     t0 = time.time()
     t_last = t0
+    t_heartbeat = 0.0
     try:
         fmt = pyvirtualcam.PixelFormat.GRAY if args.gray else pyvirtualcam.PixelFormat.RGB
         with pyvirtualcam.Camera(width=args.width, height=args.height,
@@ -119,6 +137,8 @@ def main() -> int:
             print(f"[vcam] system webcam: {vcam.device}", file=sys.stderr, flush=True)
             print(f"[vcam] PS Eye {args.width}x{args.height} @ {args.fps}fps {mode}"
                   f" -> {vcam.device}", file=sys.stderr, flush=True)
+            write_heartbeat()
+            t_heartbeat = time.time()
             while True:
                 frame, _ts = cam.read()
                 if frame is None:
@@ -130,8 +150,11 @@ def main() -> int:
                 vcam.send(frame)
                 vcam.sleep_until_next_frame()
                 frames += 1
+                now = time.time()
+                if now - t_heartbeat >= HEARTBEAT_INTERVAL:
+                    write_heartbeat()
+                    t_heartbeat = now
                 if args.stats:
-                    now = time.time()
                     if now - t_last >= args.stats:
                         dt = now - t_last
                         print(f"[vcam] {frames} frames in {dt:.1f}s ({frames / dt:.1f} fps)",

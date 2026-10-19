@@ -49,8 +49,13 @@ project can feed it without OBS running.
 ./pseye on        # start the system webcam (background, logs to vcam.log)
 ./pseye off       # stop it
 ./pseye toggle    # flip the current state
-./pseye status    # show state
+./pseye status    # show state: ON / ON (no frames) / OFF
 ```
+
+`status` reports `ON (no frames)` when the process is alive but the camera is
+not delivering frames — for example when the USB link has fallen back to full
+speed. `pseye on` waits for the first frame before reporting success, and
+`pseye off` escalates to `SIGKILL` if a stuck process ignores `SIGTERM`.
 
 Then in Zoom: **Video** → `OBS Virtual Camera`, **Microphone** →
 `USB Camera-B4.09.24.1`.

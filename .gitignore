@@ -7,6 +7,7 @@ venv/
 # Runtime state written by the scripts
 vcam.log
 .paused
+.heartbeat
 
 # Editors and IDEs
 *.swp
