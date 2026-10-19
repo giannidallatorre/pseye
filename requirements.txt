@@ -7,8 +7,10 @@
 #   python3.14 -m venv .venv
 #   .venv/bin/pip install -r requirements.txt
 #
+# Pillow is not listed: only mjpeg_server.py needs it, install it on demand
+# with `.venv/bin/pip install Pillow`.
+#
 pseyepy @ git+https://github.com/giannidallatorre/pseyepy.git@90894b1
 pyvirtualcam==0.15.0
-Pillow==12.3.0
 numpy==2.5.3
 

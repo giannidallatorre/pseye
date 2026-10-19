@@ -202,6 +202,13 @@ OBS to do the compositing.
 In OBS: `+` → **Browser** → URL `http://localhost:8090`, then
 `Start Virtual Camera`. Stop the server with Ctrl-C or `pkill -f mjpeg_server.py`.
 
+This mode is the only one that needs **Pillow**, which is therefore not in
+`requirements.txt` (the virtual camera path does not use it):
+
+```bash
+.venv/bin/pip install Pillow
+```
+
 ## How it works
 
 ```
@@ -262,6 +269,7 @@ Two consequences worth knowing:
 | `pyvirtualcam`: *OBS Virtual Camera is not installed* | same as above: OBS must be installed and its virtual camera activated once |
 | Zoom does not see the webcam you just started | Zoom caches the camera list: restart Zoom |
 | OBS Browser Source is black | server not running → `lsof -nP -iTCP:8090 -sTCP:LISTEN`; or right-click the source → *Refresh* |
+| `mjpeg_server.py`: *needs Pillow* | `.venv/bin/pip install Pillow` (only the MJPEG mode uses it) |
 | No audio in Zoom | wrong microphone: pick `USB Camera-B4.09.24.1` |
 | Double audio / echo | both `Mic/Aux` (system mic) and the PS Eye are active: pick one |
 | Stuttering video | lower `--quality`, or switch to `--res qvga` / `--fps 30` |
@@ -297,7 +305,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 | `led_off.py` | Turns the camera LED off; run by `pseye off` |
 | `mjpeg_server.py` | MJPEG server for an OBS Browser Source; `--index N` selects the camera |
 | `start.sh` | Convenience launcher for the MJPEG server |
-| `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, Pillow, NumPy) |
+| `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
 
 ## License

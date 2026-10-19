@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """PS3 Eye -> MJPEG server, meant for an OBS Browser Source.
 
+Needs Pillow (optional dependency, only this script uses it):
+    .venv/bin/pip install Pillow
+
 Usage:
     ./start.sh [--port 8090] [--fps 30] [--res vga|qvga] [--quality 80] [--index N]
     # or, with the virtualenv active:
@@ -21,10 +24,22 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from PIL import Image
 from pseyepy import Camera, cam_count
 
 BOUNDARY = "ps3eye"
+
+
+def jpeg(frame, quality):
+    """Encode a frame as JPEG.
+
+    Pillow is an optional dependency: only this server needs it, so it is
+    imported here instead of at module level and the error is actionable.
+    """
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.fromarray(frame).save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
 
 
 class Capture:
@@ -53,10 +68,9 @@ class Capture:
                 print("read error:", exc, file=sys.stderr)
                 time.sleep(0.1)
                 continue
-            buf = io.BytesIO()
-            Image.fromarray(frame).save(buf, format="JPEG", quality=self.quality)
+            data = jpeg(frame, self.quality)
             with self.lock:
-                self.latest = buf.getvalue()
+                self.latest = data
                 self.seq += 1
 
     def get(self):
@@ -141,6 +155,16 @@ def main():
         help="camera index to use (0, 1, ...). Default: all connected cameras.",
     )
     args = ap.parse_args()
+
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        print(
+            "ERROR: the MJPEG server needs Pillow to encode JPEG frames.\n"
+            "       Install it with:  .venv/bin/pip install Pillow",
+            file=sys.stderr,
+        )
+        return 1
 
     if args.index is None:
         print(f"Connected PS3 Eye cameras: {cam_count()}")
