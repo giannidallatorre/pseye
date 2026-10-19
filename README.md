@@ -59,7 +59,7 @@ project can feed it without OBS running.
 ## Usage
 
 ```bash
-./pseye on        # start the system webcam (background, logs to vcam.log)
+./pseye on        # start the system webcam (background, logs to the state dir)
 ./pseye off       # stop it
 ./pseye toggle    # flip the current state
 ./pseye status    # show state: ON / ON (no frames) / OFF
@@ -132,7 +132,8 @@ restart:
 ./pseye set reset            # back to the defaults
 ```
 
-`pseye set` writes `.settings` and sends `SIGHUP`; `vcam.py` applies the new
+`pseye set` writes `.settings` in the state directory and sends `SIGHUP`;
+`vcam.py` applies the new
 values between frames, and they survive a restart. `--camera`, `--width`,
 `--height`, `--fps` and `--gray` still need `pseye off` + `pseye on`, because
 they change the USB stream or the virtual camera format.
@@ -170,14 +171,15 @@ The plist contains the absolute path of this directory, so re-run
 ./pseye uninstall      # asks for confirmation; -y to skip it
 ```
 
-That stops the webcam, removes the LaunchAgent, deletes `.venv` and the runtime
-files (`vcam.log`, `.paused`, `.heartbeat`, `.settings`). It leaves the
+That stops the webcam, removes the LaunchAgent, deletes `.venv` and the state
+directory (`~/Library/Application Support/pseye`: `vcam.log`, `.paused`,
+`.heartbeat`, `.settings`). It leaves the
 repository, `libusb` and the OBS Camera Extension alone: the first is yours, the
 second is a normal Homebrew package (remove it with `brew uninstall libusb` if
 nothing else needs it) and the third belongs to OBS.
 
 Nothing is installed system-wide: no kext, no DAL plugin, no files outside this
-directory and `~/Library/LaunchAgents/`.
+directory, `~/Library/Application Support/pseye/` and `~/Library/LaunchAgents/`.
 
 ## Two PS Eyes at once
 
@@ -321,6 +323,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 | `start.sh` | Convenience launcher for the MJPEG server |
 | `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
+| `~/Library/Application Support/pseye/` | Runtime state, not code: `vcam.log`, `.settings`, `.heartbeat`, `.paused` (override with `PSEYE_STATE_DIR`) |
 
 ## License
 

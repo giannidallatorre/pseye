@@ -4,7 +4,8 @@ __pycache__/
 .venv/
 venv/
 
-# Runtime state written by the scripts
+# Legacy runtime state: it now lives in ~/Library/Application Support/pseye,
+# these entries only catch files left behind by older versions.
 vcam.log
 .paused
 .heartbeat

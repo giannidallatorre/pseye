@@ -29,11 +29,22 @@ DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PY="${PSEYE_PYTHON:-$DIR/.venv/bin/python}"
 LABEL="com.pseye.watch"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOG="$DIR/vcam.log"
-PAUSE="$DIR/.paused"
-HEARTBEAT="$DIR/.heartbeat"
-SETTINGS="$DIR/.settings"
+# Runtime state lives outside the checkout: it is not code, it must survive a
+# `git clean`, and a packaged install has no writable checkout at all.
+STATE_DIR="${PSEYE_STATE_DIR:-$HOME/Library/Application Support/pseye}"
+LOG="$STATE_DIR/vcam.log"
+PAUSE="$STATE_DIR/.paused"
+HEARTBEAT="$STATE_DIR/.heartbeat"
+SETTINGS="$STATE_DIR/.settings"
 UID_NUM="$(id -u)"
+
+mkdir -p "$STATE_DIR"
+# Older versions kept the runtime files next to the script: move them once.
+for legacy in vcam.log .paused .heartbeat .settings; do
+  if [[ -e "$DIR/$legacy" && ! -e "$STATE_DIR/$legacy" ]]; then
+    mv "$DIR/$legacy" "$STATE_DIR/$legacy"
+  fi
+done
 
 running() { pgrep -f "vcam.py" >/dev/null 2>&1; }
 present() { ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null | grep -q "IOUSBHostInterface@0"; }
@@ -364,7 +375,7 @@ setup() {
 uninstall() {
   local answer
   echo "This removes: the webcam process, the auto-start, .venv and the runtime"
-  echo "files (vcam.log, .paused, .heartbeat, .settings)."
+  echo "files in $STATE_DIR."
   echo "It leaves alone: this repository, libusb and the OBS Camera Extension."
   if [[ "${1:-}" != "-y" && "${1:-}" != "--yes" ]]; then
     read -r -p "Continue? [y/N] " answer || answer=""
@@ -375,6 +386,7 @@ uninstall() {
   rm -f "$PLIST"
   rm -rf "$DIR/.venv"
   rm -f "$LOG" "$PAUSE" "$HEARTBEAT" "$SETTINGS"
+  rmdir "$STATE_DIR" 2>/dev/null || true
   echo "PS Eye: uninstalled (libusb and the OBS extension were left in place)"
 }
 

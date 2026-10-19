@@ -27,13 +27,17 @@ import numpy as np
 import pyvirtualcam
 from pseyepy import Camera, cam_count
 
+# Runtime state lives outside the checkout (see `pseye`): it is not code, and a
+# packaged install has no writable checkout to put it in.
+STATE_DIR = os.environ.get(
+    "PSEYE_STATE_DIR",
+    os.path.join(os.path.expanduser("~"), "Library", "Application Support", "pseye"),
+)
+
 # Written every couple of seconds while frames are flowing. `pseye status` and
 # `pseye on` use its mtime to distinguish "process alive" from "camera actually
 # working": a stuck cam.read() leaves the process alive but the heartbeat stale.
-HEARTBEAT = os.environ.get(
-    "PSEYE_HEARTBEAT",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".heartbeat"),
-)
+HEARTBEAT = os.environ.get("PSEYE_HEARTBEAT", os.path.join(STATE_DIR, ".heartbeat"))
 HEARTBEAT_INTERVAL = 2.0
 
 
@@ -47,10 +51,7 @@ def write_heartbeat() -> None:
 
 # Live-adjustable image controls. `pseye set` writes this file and sends
 # SIGHUP; vcam.py re-reads it between frames, so no restart is needed.
-SETTINGS = os.environ.get(
-    "PSEYE_SETTINGS",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".settings"),
-)
+SETTINGS = os.environ.get("PSEYE_SETTINGS", os.path.join(STATE_DIR, ".settings"))
 
 # .settings key -> Camera attribute. The keys match the vcam.py flags.
 LIVE_PARAMS = {
@@ -198,6 +199,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    # `pseye` creates this too, but vcam.py can also be run on its own.
+    os.makedirs(STATE_DIR, exist_ok=True)
 
     # Behave like a normal CLI tool when the reader of our stderr goes away.
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
