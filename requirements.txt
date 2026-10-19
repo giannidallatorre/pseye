@@ -7,7 +7,7 @@
 #   python3.14 -m venv .venv
 #   .venv/bin/pip install -r requirements.txt
 #
-pseyepy @ git+https://github.com/giannidallatorre/pseyepy.git@be6006d2af27e7a585e068e5879ecb10349874b0
+pseyepy @ git+https://github.com/giannidallatorre/pseyepy.git@90894b1
 pyvirtualcam==0.15.0
 Pillow==12.3.0
 numpy==2.5.3
