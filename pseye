@@ -11,7 +11,14 @@
 # Extra arguments after on/toggle are passed to vcam.py, e.g.
 #   pseye on --fps 30
 set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks so this script also works when linked from ~/.local/bin.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 # Python interpreter used for the helper scripts. Override with PSEYE_PYTHON
 # if you use a different virtualenv.
 PY="${PSEYE_PYTHON:-$DIR/.venv/bin/python}"
