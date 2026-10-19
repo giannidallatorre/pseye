@@ -63,6 +63,7 @@ project can feed it without OBS running.
 ./pseye status    # show state: ON / ON (no frames) / OFF
 ./pseye doctor    # check python, libusb, camera, USB link, OBS extension
 ./pseye setup     # install libusb + the Python dependencies (idempotent)
+./pseye uninstall # remove the virtualenv, auto-start and runtime files
 ```
 
 Run `./pseye -h` for all commands and the options accepted by `on`/`toggle`.
@@ -164,18 +165,17 @@ The plist contains the absolute path of this directory, so re-run
 ### Uninstall
 
 ```bash
-./pseye off               # stop the webcam (also turns the LED off)
-./pseye autostart remove  # remove the LaunchAgent
-rm -rf .venv              # remove the virtualenv
-rm -f vcam.log .paused    # remove runtime state
+./pseye uninstall      # asks for confirmation; -y to skip it
 ```
 
-Nothing is installed system-wide: no kext, no DAL plugin, no files outside this
-directory and `~/Library/LaunchAgents/`. The only system-wide component is the
-OBS Virtual Camera Camera Extension, which belongs to OBS.
+That stops the webcam, removes the LaunchAgent, deletes `.venv` and the runtime
+files (`vcam.log`, `.paused`, `.heartbeat`, `.settings`). It leaves the
+repository, `libusb` and the OBS Camera Extension alone: the first is yours, the
+second is a normal Homebrew package (remove it with `brew uninstall libusb` if
+nothing else needs it) and the third belongs to OBS.
 
-`libusb` is a normal Homebrew package and is left in place; remove it with
-`brew uninstall libusb` if nothing else on the machine needs it.
+Nothing is installed system-wide: no kext, no DAL plugin, no files outside this
+directory and `~/Library/LaunchAgents/`.
 
 ## Two PS Eyes at once
 
@@ -311,7 +311,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 
 | File | Purpose |
 |---|---|
-| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `set` / `autostart` |
+| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `uninstall` / `set` / `autostart` |
 | `vcam.py` | PS Eye → system webcam via pyvirtualcam |
 | `vcam.sh` | Convenience launcher for `vcam.py`, with the in-use guard |
 | `mjpeg_server.py` | MJPEG server for an OBS Browser Source; `--index N` selects the camera |

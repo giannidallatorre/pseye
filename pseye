@@ -7,6 +7,7 @@
 #   pseye status     show the current state
 #   pseye doctor     check the whole chain (python, libusb, camera, USB, OBS)
 #   pseye setup      install libusb and the Python dependencies in one step
+#   pseye uninstall  remove the virtualenv, the auto-start and the runtime files
 #   pseye autostart install  start the webcam when the PS Eye is plugged in
 #   pseye autostart remove   remove the auto-start
 #   pseye set        change image controls live, without restarting
@@ -94,6 +95,7 @@ Usage:
   pseye status             show state: ON / ON (no frames) / OFF
   pseye doctor             check python, libusb, camera, USB link, OBS extension
   pseye setup              install libusb and the Python dependencies (one step)
+  pseye uninstall [-y]     remove the virtualenv, auto-start and runtime files
   pseye autostart install  start the webcam when the PS Eye is plugged in
   pseye autostart remove   remove the auto-start
   pseye set [key value]    change image controls live (no restart); no args lists them
@@ -294,19 +296,29 @@ setup() {
     echo "              (needs the Xcode Command Line Tools: xcode-select --install)"
   fi
 
+  # pyvirtualcam and numpy have no wheels for 3.15 yet, and `python3` is
+  # whatever the newest install is, so look for a supported one explicitly.
   if [[ -x "$PY" ]]; then
-    echo "python:       reusing $PY"
-  else
-    base="$(command -v python3 || true)"
+    version="$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo unknown)"
+    case "$version" in
+      3.12|3.13|3.14) echo "python:       reusing $PY ($version)" ;;
+      *)
+        echo "python:       .venv uses Python $version, which pyvirtualcam and numpy do not support: recreating"
+        rm -rf "$DIR/.venv"
+        ;;
+    esac
+  fi
+  if [[ ! -x "$PY" ]]; then
+    base=""
+    for candidate in python3.14 python3.13 python3.12 python3; do
+      command -v "$candidate" >/dev/null 2>&1 || continue
+      version="$("$candidate" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)" || continue
+      case "$version" in 3.12|3.13|3.14) base="$candidate"; break ;; esac
+    done
     if [[ -z "$base" ]]; then
-      echo "python:       python3 not found (install Python 3.12-3.14)" >&2
+      echo "python:       no Python 3.12-3.14 found (pyvirtualcam and numpy need one)" >&2
       return 1
     fi
-    version="$("$base" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-    case "$version" in
-      3.12|3.13|3.14) ;;
-      *) echo "python:       warning: $version is untested (pyvirtualcam and numpy want 3.12-3.14)" ;;
-    esac
     echo "python:       creating .venv with $base ($version)"
     "$base" -m venv "$DIR/.venv"
   fi
@@ -324,6 +336,26 @@ setup() {
   echo "Setup complete. One manual step is left: activate the OBS virtual camera"
   echo "once (open OBS -> Start Virtual Camera -> Stop Virtual Camera -> quit OBS)."
   echo "Then run: pseye on"
+}
+
+# The inverse of setup: everything this project created, and nothing else.
+# libusb is a shared Homebrew package and the OBS extension belongs to OBS, so
+# both are left in place; the repository itself is not touched either.
+uninstall() {
+  local answer
+  echo "This removes: the webcam process, the auto-start, .venv and the runtime"
+  echo "files (vcam.log, .paused, .heartbeat, .settings)."
+  echo "It leaves alone: this repository, libusb and the OBS Camera Extension."
+  if [[ "${1:-}" != "-y" && "${1:-}" != "--yes" ]]; then
+    read -r -p "Continue? [y/N] " answer || answer=""
+    [[ "$answer" == [yY]* ]] || { echo "aborted"; return 1; }
+  fi
+  stop >/dev/null 2>&1 || true
+  launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+  rm -f "$PLIST"
+  rm -rf "$DIR/.venv"
+  rm -f "$LOG" "$PAUSE" "$HEARTBEAT" "$SETTINGS"
+  echo "PS Eye: uninstalled (libusb and the OBS extension were left in place)"
 }
 
 case "${1:-status}" in
@@ -350,6 +382,10 @@ case "${1:-status}" in
     ;;
   doctor) doctor ;;
   setup) setup ;;
+  uninstall)
+    shift
+    uninstall "$@"
+    ;;
   watch)  # internal: run by launchd every 5s
     if [[ -f "$PAUSE" ]]; then
       if running; then
@@ -465,5 +501,5 @@ EOF
     esac
     ;;
   -h|--help|help) usage ;;
-  *) echo "usage: pseye {on|off|toggle|status|doctor|setup|set|autostart} (see pseye -h)"; exit 1 ;;
+  *) echo "usage: pseye {on|off|toggle|status|doctor|setup|uninstall|set|autostart} (see pseye -h)"; exit 1 ;;
 esac
