@@ -38,10 +38,14 @@ HEARTBEAT="$STATE_DIR/.heartbeat"
 SETTINGS="$STATE_DIR/.settings"
 UID_NUM="$(id -u)"
 
-mkdir -p "$STATE_DIR"
+# Created on demand, not at startup: `pseye status` must not recreate the
+# directory that `pseye uninstall` has just removed.
+ensure_state() { mkdir -p "$STATE_DIR"; }
+
 # Older versions kept the runtime files next to the script: move them once.
 for legacy in vcam.log .paused .heartbeat .settings; do
   if [[ -e "$DIR/$legacy" && ! -e "$STATE_DIR/$legacy" ]]; then
+    ensure_state
     mv "$DIR/$legacy" "$STATE_DIR/$legacy"
   fi
 done
@@ -127,6 +131,7 @@ EOF
 # vcam.py picks up between frames. No restart needed.
 settings_put() {
   local key="$1" value="$2" tmp
+  ensure_state
   tmp="$(mktemp)"
   if [[ -f "$SETTINGS" ]]; then
     grep -v "^$key=" "$SETTINGS" >"$tmp" || true
@@ -144,6 +149,7 @@ settings_show() {
 }
 
 settings_defaults() {
+  ensure_state
   cat > "$SETTINGS" <<'EOF'
 auto-gain=on
 auto-exposure=off
@@ -179,6 +185,7 @@ kill_vcam() {
 }
 
 start() {
+  ensure_state
   rm -f "$PAUSE"
   if running; then
     if heartbeat_fresh; then echo "PS Eye: already running"; return 0; fi
@@ -203,6 +210,7 @@ start() {
 }
 
 stop() {
+  ensure_state
   touch "$PAUSE"
   # vcam.py calls cam.end() on the way out, which stops the transfers and
   # turns the LED off, so there is nothing else to do here.
@@ -428,6 +436,7 @@ case "${1:-status}" in
     fi
     if present; then
       if ! running; then
+        ensure_state
         nohup "$DIR/vcam.sh" >>"$LOG" 2>&1 &
       elif ! heartbeat_fresh; then
         # Alive but not producing frames: kill it so the next cycle restarts.
@@ -524,7 +533,13 @@ EOF
       remove)
         launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
         rm -f "$PLIST"
+        # .paused only exists for `watch`: without the auto-start it is dead
+        # state, and `install` clears it anyway.
+        rm -f "$PAUSE"
         echo "auto-start removed."
+        if running; then
+          echo "the webcam is still running: pseye off to stop it."
+        fi
         ;;
       *)
         echo "usage: pseye autostart {install|remove}"

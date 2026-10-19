@@ -165,6 +165,10 @@ since installing the auto-start means you want it to start by itself.
 The plist contains the absolute path of this directory, so re-run
 `./pseye autostart install` if you move the folder.
 
+`autostart remove` only removes the agent: a webcam that is already running
+keeps running (it says so), and `./pseye off` stops it. It also clears the
+"paused" flag, which only exists for the agent.
+
 ### Uninstall
 
 ```bash
