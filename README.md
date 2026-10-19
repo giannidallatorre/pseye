@@ -110,6 +110,10 @@ those baseline values first, because the driver keeps the last manual registers
 otherwise. `auto-exposure` is not available here: it is unstable in this driver
 and stays opt-in via `--auto-exposure`.
 
+If the neutral result of auto WB looks cold under warm indoor light, a slight
+warm bias is `auto-wb off` with `blue 130` (red and green stay at 128); it
+persists like any other setting.
+
 ### Auto-start on plug-in
 
 ```bash
