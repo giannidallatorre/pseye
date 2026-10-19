@@ -5,6 +5,7 @@
 #   pseye off        stop the webcam
 #   pseye toggle     flip the current state
 #   pseye status     show the current state
+#   pseye doctor     check the whole chain (python, libusb, camera, USB, OBS)
 #   pseye install    auto-start the webcam when the PS Eye is plugged in
 #   pseye uninstall  remove the auto-start
 #   pseye set        change image controls live, without restarting
@@ -36,6 +37,51 @@ running() { pgrep -f "vcam.py" >/dev/null 2>&1; }
 present() { ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null | grep -q "IOUSBHostInterface@0"; }
 agent_loaded() { launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; }
 
+# The PS Eye is a USB 2.0 device: it must negotiate 480 Mbps (high speed).
+# When it falls back to 12 Mbps (full speed) the frames stop arriving, which
+# shows up as "ON (no frames)". Usually a hub or a bad cable.
+usb_link() {
+  local speed
+  speed="$(ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null |
+    sed -n 's/.*"UsbLinkSpeed" = \([0-9][0-9]*\).*/\1/p' | head -1)"
+  case "$speed" in
+    480000000) echo "480 Mbps" ;;
+    12000000) echo "12 Mbps (degraded, plug directly into the Mac)" ;;
+    "") echo "unknown" ;;
+    *) echo "$((speed / 1000000)) Mbps" ;;
+  esac
+}
+
+# Who holds the camera right now, e.g. "pid 54620, Python". The audio
+# interfaces are owned by usbaudiod, which is normal and not interesting.
+in_use() {
+  ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null |
+    sed -n 's/.*"UsbExclusiveOwner" = "\(.*\)".*/\1/p' |
+    grep -v usbaudiod | head -1
+}
+
+# The OBS Camera Extension is what provides the virtual camera to apps.
+obs_state() {
+  local line
+  line="$(systemextensionsctl list 2>/dev/null | grep -i "obsproject.*camera" | head -1)"
+  if [[ -z "$line" ]]; then
+    echo "not installed"
+  elif [[ "$line" == *"activated enabled"* ]]; then
+    echo "active"
+  else
+    echo "installed but not active"
+  fi
+}
+
+# libusb is a C library, not a Python package: pseyepy's extension links
+# against the Homebrew one, so check the exact path it was built with.
+libusb_path() {
+  local so
+  so="$(ls "$DIR"/.venv/lib/python*/site-packages/pseyepy/cameras*.so 2>/dev/null | head -1)"
+  [[ -n "$so" ]] || return 0
+  otool -L "$so" 2>/dev/null | awk '/libusb/ {print $1; exit}'
+}
+
 usage() {
   cat <<EOF
 PS Eye webcam control.
@@ -45,6 +91,7 @@ Usage:
   pseye off               stop it (turns the LED off)
   pseye toggle [options]  flip the current state
   pseye status            show state: ON / ON (no frames) / OFF
+  pseye doctor            check python, libusb, camera, USB link, OBS extension
   pseye install           start the webcam when the PS Eye is plugged in
   pseye uninstall         remove the auto-start
   pseye set [key value]   change image controls live (no restart); no args lists them
@@ -155,6 +202,84 @@ stop() {
   echo "PS Eye: OFF"
 }
 
+# One line per check. FAIL means the webcam cannot work; warn means it works
+# but something is off. Exits non-zero if any check failed, so it is scriptable.
+doctor_line() { printf '%-12s %-5s %s\n' "$1" "$2" "$3"; }
+
+doctor() {
+  local failures=0 libusb obs owner speed
+
+  if [[ -x "$PY" ]]; then
+    doctor_line "python:" ok "$PY ($("$PY" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null || echo broken))"
+  else
+    doctor_line "python:" FAIL "no virtualenv at $DIR/.venv (run: pseye setup)"
+    failures=$((failures + 1))
+  fi
+
+  libusb="$(libusb_path)"
+  if [[ -z "$libusb" ]]; then
+    doctor_line "libusb:" "?" "pseyepy not installed (run: pseye setup)"
+  elif [[ -e "$libusb" ]]; then
+    doctor_line "libusb:" ok "$libusb"
+  else
+    doctor_line "libusb:" FAIL "$libusb not found (brew install libusb)"
+    failures=$((failures + 1))
+  fi
+
+  if present; then
+    doctor_line "camera:" ok "plugged in"
+    speed="$(usb_link)"
+    if [[ "$speed" == 480* ]]; then
+      doctor_line "usb:" ok "$speed"
+    else
+      doctor_line "usb:" warn "$speed"
+    fi
+  else
+    doctor_line "camera:" FAIL "not plugged in"
+    doctor_line "usb:" "-" "-"
+    failures=$((failures + 1))
+  fi
+
+  obs="$(obs_state)"
+  case "$obs" in
+    active) doctor_line "obs ext:" ok "active" ;;
+    "not installed")
+      doctor_line "obs ext:" FAIL "not installed (install OBS Studio, then enable its Camera Extension)"
+      failures=$((failures + 1))
+      ;;
+    *)
+      doctor_line "obs ext:" warn "$obs (enable it in System Settings > General > Login Items & Extensions)"
+      ;;
+  esac
+
+  if running; then
+    if heartbeat_fresh; then
+      doctor_line "webcam:" ok "ON"
+    else
+      doctor_line "webcam:" warn "ON (no frames)"
+    fi
+  else
+    doctor_line "webcam:" "-" "OFF"
+  fi
+
+  owner="$(in_use)"
+  if [[ -z "$owner" ]]; then
+    doctor_line "in use:" "-" "no"
+  elif [[ "$owner" == *Python* ]] && running; then
+    doctor_line "in use:" ok "$owner (this webcam)"
+  else
+    doctor_line "in use:" warn "$owner"
+  fi
+
+  if agent_loaded; then
+    doctor_line "auto-start:" ok "installed"
+  else
+    doctor_line "auto-start:" "-" "not installed"
+  fi
+
+  (( failures == 0 ))
+}
+
 case "${1:-status}" in
   on)
     shift
@@ -174,8 +299,10 @@ case "${1:-status}" in
       echo "webcam:     OFF"
     fi
     if [[ -f "$PAUSE" ]]; then echo "paused:     yes (manual off)"; else echo "paused:     no"; fi
+    if present; then echo "usb:        $(usb_link)"; else echo "usb:        -"; fi
     if agent_loaded; then echo "auto-start: installed"; else echo "auto-start: not installed"; fi
     ;;
+  doctor) doctor ;;
   watch)  # internal: run by launchd every 5s
     if [[ -f "$PAUSE" ]]; then
       if running; then
@@ -280,5 +407,5 @@ EOF
     echo "auto-start removed."
     ;;
   -h|--help|help) usage ;;
-  *) echo "usage: pseye {on|off|toggle|status|set|install|uninstall} (see pseye -h)"; exit 1 ;;
+  *) echo "usage: pseye {on|off|toggle|status|doctor|set|install|uninstall} (see pseye -h)"; exit 1 ;;
 esac

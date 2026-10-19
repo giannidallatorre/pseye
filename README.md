@@ -50,6 +50,7 @@ project can feed it without OBS running.
 ./pseye off       # stop it
 ./pseye toggle    # flip the current state
 ./pseye status    # show state: ON / ON (no frames) / OFF
+./pseye doctor    # check python, libusb, camera, USB link, OBS extension
 ```
 
 Run `./pseye -h` for all commands and the options accepted by `on`/`toggle`.
@@ -58,6 +59,23 @@ Run `./pseye -h` for all commands and the options accepted by `on`/`toggle`.
 not delivering frames — for example when the USB link has fallen back to full
 speed. `pseye on` waits for the first frame before reporting success, and
 `pseye off` escalates to `SIGKILL` if a stuck process ignores `SIGTERM`.
+
+Both `status` and `doctor` print the USB link speed (`usb: 480 Mbps`); anything
+other than 480 Mbps means the camera negotiated full speed and will not deliver
+frames. `doctor` checks the whole chain and exits non-zero if something is
+broken, so it is the first thing to run when the webcam does not work:
+
+```
+$ ./pseye doctor
+python:      ok    /…/pseye/.venv/bin/python (3.14.8)
+libusb:      ok    /usr/local/opt/libusb/lib/libusb-1.0.0.dylib
+camera:      ok    plugged in
+usb:         ok    480 Mbps
+obs ext:     ok    active
+webcam:      ok    ON
+in use:      ok    pid 54620, Python (this webcam)
+auto-start:  -     not installed
+```
 
 Then in Zoom: **Video** → `OBS Virtual Camera`, **Microphone** →
 `USB Camera-B4.09.24.1`.
@@ -239,7 +257,7 @@ Two consequences worth knowing:
 | Symptom | Cause / remedy |
 |---|---|
 | `vcam.sh`: *the PS Eye is already in use* | another process holds it → `pkill -f mjpeg_server.py` (or `pkill -f vcam.py`) |
-| `status` says `ON (no frames)` | the USB link fell back to full speed (12 Mbps): check `UsbLinkSpeed` in `ioreg -w0 -l -r -n "USB Camera-B4.09.24.1"` (it must be `480000000`) and plug the camera directly into the Mac, not into a hub |
+| `status` says `ON (no frames)` | the USB link fell back to full speed (12 Mbps): `pseye status` / `pseye doctor` show the link speed; it must be 480 Mbps. Plug the camera directly into the Mac, not into a hub |
 | Zoom does not see `OBS Virtual Camera` | the OBS virtual camera was never activated: open OBS → *Start Virtual Camera* → *Stop* → quit |
 | `pyvirtualcam`: *OBS Virtual Camera is not installed* | same as above: OBS must be installed and its virtual camera activated once |
 | Zoom does not see the webcam you just started | Zoom caches the camera list: restart Zoom |
@@ -273,7 +291,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 
 | File | Purpose |
 |---|---|
-| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `install` / `uninstall` |
+| `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `install` / `uninstall` |
 | `vcam.py` | PS Eye → system webcam via pyvirtualcam |
 | `vcam.sh` | Convenience launcher for `vcam.py`, with the in-use guard |
 | `led_off.py` | Turns the camera LED off; run by `pseye off` |
