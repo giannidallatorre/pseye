@@ -207,6 +207,7 @@ Two consequences worth knowing:
 | Symptom | Cause / remedy |
 |---|---|
 | `vcam.sh`: *the PS Eye is already in use* | another process holds it → `pkill -f mjpeg_server.py` (or `pkill -f vcam.py`) |
+| `status` says `ON (no frames)` | the USB link fell back to full speed (12 Mbps): check `UsbLinkSpeed` in `ioreg -w0 -l -r -n "USB Camera-B4.09.24.1"` (it must be `480000000`) and plug the camera directly into the Mac, not into a hub |
 | Zoom does not see `OBS Virtual Camera` | the OBS virtual camera was never activated: open OBS → *Start Virtual Camera* → *Stop* → quit |
 | `pyvirtualcam`: *OBS Virtual Camera is not installed* | same as above: OBS must be installed and its virtual camera activated once |
 | Zoom does not see the webcam you just started | Zoom caches the camera list: restart Zoom |
