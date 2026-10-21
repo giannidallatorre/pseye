@@ -462,8 +462,23 @@ case "${1:-status}" in
     # tracks a process that outlives the tick and can send it SIGTERM at
     # logout, which is what lets vcam.py run cam.end().
     if [[ -f "$PAUSE" ]]; then exit 0; fi
-    if ! present; then exit 0; fi
-    if running; then exit 0; fi
+    if ! present; then
+      # A vcam.py left behind by a previous supervisor (or by the old `watch`)
+      # would keep the camera claimed forever and make every later start fail.
+      # The old tick killed it here too; nothing to start, so clean up and go.
+      if running; then
+        kill_vcam
+        rm -f "$HEARTBEAT"
+      fi
+      exit 0
+    fi
+    if running; then
+      # Someone else owns the process: adopt it while it is healthy, otherwise
+      # kill it so this tick can start a fresh one.
+      if heartbeat_fresh; then exit 0; fi
+      kill_vcam
+      rm -f "$HEARTBEAT"
+    fi
     ensure_state
     rm -f "$HEARTBEAT"
 
@@ -510,6 +525,17 @@ case "${1:-status}" in
     while :; do
       if ! alive; then
         wait "$child" 2>/dev/null || true
+        exit 0
+      fi
+      if ! present; then
+        # Unplugged. There is nothing left to shut down cleanly (cam.end()
+        # would only fail on a device that is gone), so kill the child at once
+        # instead of waiting for the heartbeat to go stale: a vcam.py still
+        # blocked in cam.read() keeps the device claimed, and re-plugging the
+        # PS Eye while it is claimed makes it enumerate and drop again.
+        pkill -KILL -f "vcam.py" 2>/dev/null || true
+        wait "$child" 2>/dev/null || true
+        rm -f "$HEARTBEAT"
         exit 0
       fi
       if ! heartbeat_fresh; then

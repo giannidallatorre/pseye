@@ -162,6 +162,12 @@ it (turning the LED off) when it is unplugged. It stays idle while `./pseye off`
 is in effect; `./pseye on` clears that, and so does `./pseye autostart install`,
 since installing the auto-start means you want it to start by itself.
 
+Unplugging is noticed within a couple of seconds, not when the heartbeat finally
+goes stale: the supervisor checks the USB bus on every pass and kills `vcam.py`
+at once. That matters because a `vcam.py` still blocked in `cam.read()` keeps
+the device claimed, and re-plugging the PS Eye while it is claimed makes it
+enumerate and drop off the bus again.
+
 The supervisor stays alive for as long as the webcam runs, so launchd tracks the
 process instead of losing it: at logout or shutdown it gets a `SIGTERM`, stops
 `vcam.py` cleanly (`cam.end()`, transfers cancelled, LED off) and only escalates
