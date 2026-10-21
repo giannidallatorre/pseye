@@ -33,9 +33,13 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 # `git clean`, and a packaged install has no writable checkout at all.
 STATE_DIR="${PSEYE_STATE_DIR:-$HOME/Library/Application Support/pseye}"
 LOG="$STATE_DIR/vcam.log"
+LAUNCHD_LOG="$STATE_DIR/launchd.log"
 PAUSE="$STATE_DIR/.paused"
 HEARTBEAT="$STATE_DIR/.heartbeat"
 SETTINGS="$STATE_DIR/.settings"
+# Options for the agent to pass to vcam.py (`pseye on --fps 30`). Only written
+# when the agent is installed: it is the agent's state, not the user's.
+ARGS="$STATE_DIR/.args"
 UID_NUM="$(id -u)"
 
 # Created on demand, not at startup: `pseye status` must not recreate the
@@ -194,7 +198,15 @@ start() {
   fi
   rm -f "$HEARTBEAT"
   if ! present; then echo "PS Eye: not plugged in"; return 1; fi
-  nohup "$DIR/vcam.sh" "$@" >"$LOG" 2>&1 &
+  if agent_loaded; then
+    # The agent owns the process: a manual nohup would be an orphan again, and
+    # launchd would SIGKILL it at logout without running cam.end(). Hand the
+    # options over instead, so the agent starts it with the same ones.
+    if [[ $# -gt 0 ]]; then printf '%s\n' "$@" >"$ARGS"; else rm -f "$ARGS"; fi
+    launchctl kickstart -k "gui/$UID_NUM/$LABEL"
+  else
+    nohup "$DIR/vcam.sh" "$@" >"$LOG" 2>&1 &
+  fi
   # Wait up to 5 s for the first heartbeat: a live process is not enough,
   # frames must actually be flowing.
   for _ in $(seq 1 25); do
@@ -393,7 +405,7 @@ uninstall() {
   launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
   rm -f "$PLIST"
   rm -rf "$DIR/.venv"
-  rm -f "$LOG" "$PAUSE" "$HEARTBEAT" "$SETTINGS"
+  rm -f "$LOG" "$LAUNCHD_LOG" "$PAUSE" "$HEARTBEAT" "$SETTINGS" "$ARGS"
   rmdir "$STATE_DIR" 2>/dev/null || true
   echo "PS Eye: uninstalled (libusb and the OBS extension were left in place)"
 }
@@ -426,29 +438,73 @@ case "${1:-status}" in
     shift
     uninstall "$@"
     ;;
-  watch)  # internal: run by launchd every 5s
-    if [[ -f "$PAUSE" ]]; then
-      if running; then
-        kill_vcam
-        rm -f "$HEARTBEAT"
+  supervise)  # internal: run by launchd; owns vcam.py for its whole life
+    # launchd starts this every 5 s, but while it runs the ticks are skipped,
+    # so there is never a second instance. Because it stays alive, launchd
+    # tracks a process that outlives the tick and can send it SIGTERM at
+    # logout, which is what lets vcam.py run cam.end().
+    if [[ -f "$PAUSE" ]]; then exit 0; fi
+    if ! present; then exit 0; fi
+    if running; then exit 0; fi
+    ensure_state
+    rm -f "$HEARTBEAT"
+
+    child=""
+    # `kill -0` succeeds on a zombie, so ask ps for the state instead.
+    alive() {
+      local st
+      st="$(ps -p "$child" -o stat= 2>/dev/null || true)"
+      [[ -n "$st" && "$st" != Z* ]]
+    }
+
+    # cam.read() can be blocked in C++, where Python signal handlers never run,
+    # so the child may ignore SIGTERM: forward it, wait, then escalate.
+    forward() {
+      if [[ -n "$child" ]]; then
+        kill -TERM "$child" 2>/dev/null || true
+        for _ in 1 2 3 4; do
+          alive || exit 0
+          sleep 1
+        done
+        kill -KILL "$child" 2>/dev/null || true
       fi
       exit 0
-    fi
-    if present; then
-      if ! running; then
-        ensure_state
-        nohup "$DIR/vcam.sh" >>"$LOG" 2>&1 &
-      elif ! heartbeat_fresh; then
-        # Alive but not producing frames: kill it so the next cycle restarts.
-        kill_vcam
-        rm -f "$HEARTBEAT"
-      fi
+    }
+    trap forward TERM INT
+
+    if [[ -f "$ARGS" ]]; then
+      args=()
+      while IFS= read -r line; do args+=("$line"); done <"$ARGS"
+      "$DIR/vcam.sh" "${args[@]}" >>"$LOG" 2>&1 &
     else
-      if running; then
-        kill_vcam
-        rm -f "$HEARTBEAT"
-      fi
+      "$DIR/vcam.sh" >>"$LOG" 2>&1 &
     fi
+    child=$!
+
+    # The heartbeat does not exist yet: without this grace period the check
+    # below would kill the process before it has produced a single frame.
+    for _ in $(seq 1 25); do
+      alive || break
+      heartbeat_fresh && break
+      sleep 0.2
+    done
+
+    while :; do
+      if ! alive; then
+        wait "$child" 2>/dev/null || true
+        exit 0
+      fi
+      if ! heartbeat_fresh; then
+        # Alive but not producing frames: kill it and let the next tick start
+        # a fresh one.
+        kill_vcam
+        wait "$child" 2>/dev/null || true
+        exit 1
+      fi
+      # Interruptible sleep: a plain `sleep 2` would delay the SIGTERM trap.
+      sleep 2 &
+      wait $! 2>/dev/null || true
+    done
     ;;
   set)
     shift
@@ -512,14 +568,17 @@ case "${1:-status}" in
   <key>ProgramArguments</key>
   <array>
     <string>$DIR/pseye</string>
-    <string>watch</string>
+    <string>supervise</string>
   </array>
   <key>StartInterval</key><integer>5</integer>
   <key>RunAtLoad</key><true/>
-  <!-- watch starts vcam.sh in the background and exits. Without this,
-       launchd kills the whole process group when the job exits, so the
-       webcam would die a moment after being started. -->
-  <key>AbandonProcessGroup</key><true/>
+  <!-- launchd tracks the supervisor for as long as the webcam runs, so at
+       logout it gets a SIGTERM and can stop vcam.py cleanly (cam.end()).
+       ExitTimeOut is a ceiling, not a wait: the supervisor exits sooner. -->
+  <key>ExitTimeOut</key><integer>10</integer>
+  <!-- Only the supervisor's own errors land here; vcam.py writes vcam.log. -->
+  <key>StandardOutPath</key><string>$LAUNCHD_LOG</string>
+  <key>StandardErrorPath</key><string>$LAUNCHD_LOG</string>
 </dict>
 </plist>
 EOF
@@ -533,9 +592,11 @@ EOF
       remove)
         launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
         rm -f "$PLIST"
-        # .paused only exists for `watch`: without the auto-start it is dead
-        # state, and `install` clears it anyway.
-        rm -f "$PAUSE"
+        # Everything the agent owns goes with it: .paused only exists for
+        # `supervise`, .args only for the options it passes to vcam.py, and
+        # launchd.log is written by launchd itself. `install` clears .paused
+        # anyway, so leaving it behind would only be dead state.
+        rm -f "$PAUSE" "$ARGS" "$LAUNCHD_LOG"
         echo "auto-start removed."
         if running; then
           echo "the webcam is still running: pseye off to stop it."
