@@ -156,18 +156,27 @@ persists like any other setting.
 ```
 
 `autostart install` writes `~/Library/LaunchAgents/com.pseye.watch.plist` and
-bootstraps it into your GUI session. The agent runs `./pseye watch` every 5
-seconds, which starts the webcam when the camera is present and stops it
-(turning the LED off) when it is unplugged. It stays idle while `./pseye off` is
-in effect; `./pseye on` clears that, and so does `./pseye autostart install`,
+bootstraps it into your GUI session. The agent runs `./pseye supervise` every 5
+seconds; the supervisor starts the webcam when the camera is present and stops
+it (turning the LED off) when it is unplugged. It stays idle while `./pseye off`
+is in effect; `./pseye on` clears that, and so does `./pseye autostart install`,
 since installing the auto-start means you want it to start by itself.
+
+The supervisor stays alive for as long as the webcam runs, so launchd tracks the
+process instead of losing it: at logout or shutdown it gets a `SIGTERM`, stops
+`vcam.py` cleanly (`cam.end()`, transfers cancelled, LED off) and only escalates
+to `SIGKILL` if the camera is stuck. It also watches the heartbeat, so a process
+that is alive but no longer producing frames is restarted. With the agent
+installed, `./pseye on` hands the process to the agent rather than starting an
+untracked one, and `./pseye on --fps 30` keeps its options across restarts.
 
 The plist contains the absolute path of this directory, so re-run
 `./pseye autostart install` if you move the folder.
 
 `autostart remove` only removes the agent: a webcam that is already running
-keeps running (it says so), and `./pseye off` stops it. It also clears the
-"paused" flag, which only exists for the agent.
+keeps running (it says so), and `./pseye off` stops it. It also removes
+everything the agent owns — the "paused" flag, the saved options and
+`launchd.log` — so nothing is left behind.
 
 ### Uninstall
 
@@ -176,8 +185,8 @@ keeps running (it says so), and `./pseye off` stops it. It also clears the
 ```
 
 That stops the webcam, removes the LaunchAgent, deletes `.venv` and the state
-directory (`~/Library/Application Support/pseye`: `vcam.log`, `.paused`,
-`.heartbeat`, `.settings`). It leaves the
+directory (`~/Library/Application Support/pseye`: `vcam.log`, `launchd.log`,
+`.paused`, `.heartbeat`, `.settings`, `.args`). It leaves the
 repository, `libusb` and the OBS Camera Extension alone: the first is yours, the
 second is a normal Homebrew package (remove it with `brew uninstall libusb` if
 nothing else needs it) and the third belongs to OBS.
@@ -327,7 +336,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 | `start.sh` | Convenience launcher for the MJPEG server |
 | `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
-| `~/Library/Application Support/pseye/` | Runtime state, not code: `vcam.log`, `.settings`, `.heartbeat`, `.paused` (override with `PSEYE_STATE_DIR`) |
+| `~/Library/Application Support/pseye/` | Runtime state, not code: `vcam.log`, `launchd.log`, `.settings`, `.heartbeat`, `.paused`, `.args` (override with `PSEYE_STATE_DIR`) |
 
 ## License
 
