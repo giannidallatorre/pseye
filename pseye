@@ -615,6 +615,10 @@ case "${1:-status}" in
     <string>supervise</string>
   </array>
   <key>StartInterval</key><integer>5</integer>
+  <!-- launchd throttles a job that exits quickly to one spawn every 10 s by
+       default, which would turn the 5 s interval into a 10 s one and double
+       the delay before a re-plugged camera is picked up. -->
+  <key>ThrottleInterval</key><integer>1</integer>
   <key>RunAtLoad</key><true/>
   <!-- launchd tracks the supervisor for as long as the webcam runs, so at
        logout it gets a SIGTERM and can stop vcam.py cleanly (cam.end()).
