@@ -41,10 +41,12 @@ HEARTBEAT = os.environ.get("PSEYE_HEARTBEAT", os.path.join(STATE_DIR, ".heartbea
 HEARTBEAT_INTERVAL = 2.0
 
 
-def write_heartbeat() -> None:
+def write_heartbeat(fps: float | None = None) -> None:
+    # The mtime is what `pseye` checks; the fps is a bonus for `pseye status`,
+    # measured over the last interval so it reflects what is really flowing.
     try:
         with open(HEARTBEAT, "w") as fh:
-            fh.write(str(time.time()))
+            fh.write(f"{time.time():.0f}" + (f" {fps:.1f}" if fps else ""))
     except OSError:
         pass
 
@@ -241,6 +243,7 @@ def main() -> int:
     pending = True
 
     frames = 0
+    frames_hb = 0
     t0 = time.time()
     t_last = t0
     t_heartbeat = 0.0
@@ -279,9 +282,11 @@ def main() -> int:
                 vcam.send(frame)
                 vcam.sleep_until_next_frame()
                 frames += 1
+                frames_hb += 1
                 now = time.time()
                 if now - t_heartbeat >= HEARTBEAT_INTERVAL:
-                    write_heartbeat()
+                    write_heartbeat(frames_hb / (now - t_heartbeat))
+                    frames_hb = 0
                     t_heartbeat = now
                 if args.stats:
                     if now - t_last >= args.stats:

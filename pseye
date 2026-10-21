@@ -175,6 +175,12 @@ heartbeat_age() {
 }
 heartbeat_fresh() { [[ "$(heartbeat_age)" -le 6 ]]; }
 
+# vcam.py writes "<timestamp> <fps>" in the heartbeat; older versions wrote the
+# timestamp alone, so the fps is optional.
+heartbeat_fps() {
+  awk 'NF > 1 { printf "%d", $2 }' "$HEARTBEAT" 2>/dev/null
+}
+
 # SIGTERM is not enough when vcam.py is blocked inside cam.read(): Python only
 # runs the signal handler when the interpreter regains control, which never
 # happens if the C++ frame queue is waiting forever. Escalate to SIGKILL.
@@ -208,8 +214,11 @@ start() {
     nohup "$DIR/vcam.sh" "$@" >"$LOG" 2>&1 &
   fi
   # Wait up to 5 s for the first heartbeat: a live process is not enough,
-  # frames must actually be flowing.
-  for _ in $(seq 1 25); do
+  # frames must actually be flowing. With the agent in charge the start goes
+  # through launchd, which can add a tick, so allow it twice as long.
+  local tries=25
+  if agent_loaded; then tries=50; fi
+  for _ in $(seq 1 "$tries"); do
     sleep 0.2
     if running && heartbeat_fresh; then
       echo "PS Eye: ON  (log: $LOG)"
@@ -424,7 +433,16 @@ case "${1:-status}" in
     ;;
   status)
     if running; then
-      if heartbeat_fresh; then echo "webcam:     ON"; else echo "webcam:     ON (no frames)"; fi
+      if heartbeat_fresh; then
+        fps="$(heartbeat_fps)"
+        if [[ -n "$fps" ]]; then
+          echo "webcam:     ON  (${fps} fps)"
+        else
+          echo "webcam:     ON"
+        fi
+      else
+        echo "webcam:     ON (no frames)"
+      fi
     else
       echo "webcam:     OFF"
     fi
