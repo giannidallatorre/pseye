@@ -23,7 +23,11 @@ trap '[[ -n "${KEEP:-}" ]] || rm -rf "$TMP"' EXIT
 
 pass=0 fail=0 skipped=0
 ok()   { pass=$((pass + 1)); printf '  ok    %s\n' "$1"; }
-bad()  { fail=$((fail + 1)); printf '  FAIL  %s\n' "$1"; [[ $# -gt 1 ]] && printf '        %s\n' "$2"; }
+bad()  {
+  fail=$((fail + 1)); printf '  FAIL  %s\n' "$1"
+  [[ $# -gt 1 ]] && printf '        %s\n' "$2"
+  pgrep -af "vcam.py" 2>/dev/null | sed 's/^/        proc: /'
+}
 skip() { skipped=$((skipped + 1)); printf '  skip  %s\n' "$1"; }
 group() { printf '\n%s\n' "$1"; }
 
@@ -31,8 +35,10 @@ group() { printf '\n%s\n' "$1"; }
 # directory, so nothing leaks into the checkout or the real state.
 sandbox() {
   SB="$TMP/$1"
-  APP="$SB/app"
-  mkdir -p "$APP" "$SB/home/Library/LaunchAgents"
+  mkdir -p "$SB/app" "$SB/home/Library/LaunchAgents"
+  # pseye resolves symlinks (on macOS /var is /private/var), and it matches its
+  # own process by absolute path, so the sandbox has to use the real one too.
+  APP="$(cd -P "$SB/app" && pwd)"
   cp "$ROOT/pseye" "$APP/pseye"
   chmod +x "$APP/pseye"
   cat > "$APP/vcam.sh" <<'EOF'
@@ -83,15 +89,19 @@ camera_present() {
   ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null | grep -q "IOUSBHostInterface@0"
 }
 
-# A process that has exited but not been reaped still answers pgrep.
-webcam_running() {
+# A process that has exited but not been reaped still answers pgrep, and a
+# bare "vcam.py" also matches an editor or a leftover from a crashed run, so
+# match the absolute path of the script we mean.
+running_script() {
   local pid
-  for pid in $(pgrep -f "vcam.py" 2>/dev/null); do
+  for pid in $(pgrep -f "$1" 2>/dev/null); do
     [[ "$(ps -p "$pid" -o stat= 2>/dev/null)" == Z* ]] && continue
     return 0
   done
   return 1
 }
+webcam_running() { running_script "$ROOT/vcam.py"; }
+fake_running()   { running_script "$APP/vcam.py"; }
 
 alive_pid() {
   local st
@@ -269,12 +279,12 @@ sleep 2
 echo absent > "$PSEYE_TEST_USB_FILE"
 t0=$(date +%s)
 for _ in $(seq 1 40); do
-  webcam_running || break
+  fake_running || break
   sleep 0.1
 done
 dt=$(( $(date +%s) - t0 ))
 wait $SUP 2>/dev/null; rc=$?
-if webcam_running; then bad "unplug did not kill the child"; else ok "unplug kills the child in ${dt}s"; fi
+if fake_running; then bad "unplug did not kill the child"; else ok "unplug kills the child in ${dt}s"; fi
 [[ $rc -eq 0 ]] && ok "unplug -> supervisor exits 0" || bad "supervisor exit $rc"
 
 sandbox sup_term
@@ -285,7 +295,7 @@ sleep 2
 kill -TERM $SUP
 wait $SUP 2>/dev/null; rc=$?
 [[ $rc -eq 0 ]] && ok "SIGTERM -> supervisor exits 0" || bad "supervisor exit $rc"
-webcam_running && bad "SIGTERM left the child alive" || ok "SIGTERM takes the child with it"
+fake_running && bad "SIGTERM left the child alive" || ok "SIGTERM takes the child with it"
 
 sandbox sup_stray
 export PSEYE_TEST_USB=absent

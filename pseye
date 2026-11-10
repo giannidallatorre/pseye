@@ -41,6 +41,10 @@ SETTINGS="$STATE_DIR/.settings"
 # when the agent is installed: it is the agent's state, not the user's.
 ARGS="$STATE_DIR/.args"
 UID_NUM="$(id -u)"
+# What identifies our process. The absolute path, not the bare file name:
+# `pkill -f vcam.py` also matches `vim vcam.py`, `less vcam.py` and a `grep`,
+# and killing someone's editor is not a nice side effect of `pseye off`.
+VCAM="$DIR/vcam.py"
 
 # Created on demand, not at startup: `pseye status` must not recreate the
 # directory that `pseye uninstall` has just removed.
@@ -58,7 +62,7 @@ done
 # zombie until its parent reaps it: ask ps for the state, like alive() does.
 running() {
   local pid
-  for pid in $(pgrep -f "vcam.py" 2>/dev/null); do
+  for pid in $(pgrep -f "$VCAM" 2>/dev/null); do
     [[ "$(ps -p "$pid" -o stat= 2>/dev/null)" == Z* ]] && continue
     return 0
   done
@@ -197,12 +201,12 @@ heartbeat_fps() {
 # cam.end() was never called and the LED is still on.
 KILLED_HARD=0
 kill_vcam() {
-  pkill -TERM -f "vcam.py" 2>/dev/null || true
+  pkill -TERM -f "$VCAM" 2>/dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    pgrep -f "vcam.py" >/dev/null 2>&1 || return 0
+    pgrep -f "$VCAM" >/dev/null 2>&1 || return 0
     sleep 0.2
   done
-  pkill -KILL -f "vcam.py" 2>/dev/null || true
+  pkill -KILL -f "$VCAM" 2>/dev/null || true
   KILLED_HARD=1
   sleep 0.5
 }
@@ -582,7 +586,7 @@ case "${1:-status}" in
         # instead of waiting for the heartbeat to go stale: a vcam.py still
         # blocked in cam.read() keeps the device claimed, and re-plugging the
         # PS Eye while it is claimed makes it enumerate and drop again.
-        pkill -KILL -f "vcam.py" 2>/dev/null || true
+        pkill -KILL -f "$VCAM" 2>/dev/null || true
         wait "$child" 2>/dev/null || true
         rm -f "$HEARTBEAT"
         exit 0
@@ -604,7 +608,7 @@ case "${1:-status}" in
     if [[ $# -eq 0 ]]; then settings_show; exit 0; fi
     if [[ "$1" == "reset" ]]; then
       settings_defaults
-      if running; then pkill -HUP -f "vcam.py" 2>/dev/null || true; fi
+      if running; then pkill -HUP -f "$VCAM" 2>/dev/null || true; fi
       echo "PS Eye: settings reset to defaults"
       exit 0
     fi
@@ -642,7 +646,7 @@ case "${1:-status}" in
         ;;
     esac
     if running; then
-      pkill -HUP -f "vcam.py" 2>/dev/null || true
+      pkill -HUP -f "$VCAM" 2>/dev/null || true
       echo "PS Eye: $key=$value"
     else
       echo "PS Eye: $key=$value (saved, applies at next start)"
