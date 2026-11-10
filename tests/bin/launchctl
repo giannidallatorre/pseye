@@ -1,0 +1,12 @@
+#!/bin/bash
+# Stub for launchctl. PSEYE_TEST_LAUNCHD is a marker file that stands in for
+# "the job is loaded in the GUI domain".
+marker="${PSEYE_TEST_LAUNCHD:?PSEYE_TEST_LAUNCHD not set}"
+
+case "${1:-}" in
+  print)     [[ -f "$marker" ]] && exit 0 || exit 1 ;;
+  bootstrap) touch "$marker"; exit 0 ;;
+  bootout)   rm -f "$marker"; exit 0 ;;
+  kickstart) exit 0 ;;
+esac
+exit 0

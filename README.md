@@ -337,6 +337,21 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
   ffmpeg -i /tmp/a.wav -af volumedetect -f null - 2>&1 | grep volume
 ```
 
+## Tests
+
+```bash
+./tests/run.sh          # everything, including the camera
+./tests/run.sh cli      # only the tests that need no camera
+```
+
+No dependencies beyond bash and the virtualenv. The tests run against stubs
+(`tests/bin/ioreg`, `tests/bin/launchctl`) in a throwaway state directory, so
+the real `~/Library/Application Support/pseye` is never touched. They cover the
+CLI, `doctor`, `autostart`, `uninstall` and the supervisor lifecycle (child
+exits on its own, stale heartbeat, unplug, `SIGTERM`, the LED fallback). The
+camera tests are skipped when the PS Eye is not plugged in, and the whole run
+takes about a minute.
+
 ## Files
 
 | File | Purpose |
@@ -349,6 +364,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 | `start.sh` | Convenience launcher for the MJPEG server |
 | `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
+| `tests/` | Test suite: `./tests/run.sh`, with stubs for `ioreg` and `launchctl` |
 | `~/Library/Application Support/pseye/` | Runtime state, not code: `vcam.log`, `launchd.log`, `.settings`, `.heartbeat`, `.paused`, `.args` (override with `PSEYE_STATE_DIR`) |
 
 ## License

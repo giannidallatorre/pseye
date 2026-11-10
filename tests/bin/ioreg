@@ -1,0 +1,35 @@
+#!/bin/bash
+# Stub for ioreg, so the tests can decide whether the PS Eye is on the bus.
+#
+#   PSEYE_TEST_USB=absent    nothing (default)
+#   PSEYE_TEST_USB=present   on the bus at 480 Mbps, held by us
+#   PSEYE_TEST_USB=degraded  on the bus at 12 Mbps
+#   PSEYE_TEST_USB=busy      on the bus, held by another process
+#
+# `pseye` only ever asks for the camera node, so that is all this prints.
+# A file wins over the variable, so a test can change the answer while a
+# process that already started (the supervisor) keeps calling ioreg.
+mode="${PSEYE_TEST_USB:-absent}"
+if [[ -n "${PSEYE_TEST_USB_FILE:-}" && -f "$PSEYE_TEST_USB_FILE" ]]; then
+  mode="$(cat "$PSEYE_TEST_USB_FILE")"
+fi
+
+case "$mode" in
+  absent) exit 0 ;;
+esac
+
+speed=480000000
+owner="pid 123, Python"
+case "$mode" in
+  degraded) speed=12000000 ;;
+  busy) owner="pid 999, mjpeg_server.py" ;;
+esac
+
+cat <<EOF
++-o USB Camera-B4.09.24.1@14200000  <class IOUSBHostDevice, id 0x100000001>
+    {
+      "UsbLinkSpeed" = $speed
+      "UsbExclusiveOwner" = "$owner"
+    }
+  +-o IOUSBHostInterface@0  <class IOUSBHostInterface, id 0x100000002>
+EOF
