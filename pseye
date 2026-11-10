@@ -184,6 +184,9 @@ heartbeat_fps() {
 # SIGTERM is not enough when vcam.py is blocked inside cam.read(): Python only
 # runs the signal handler when the interpreter regains control, which never
 # happens if the C++ frame queue is waiting forever. Escalate to SIGKILL.
+# Set when kill_vcam had to escalate: the process never ran its cleanup, so
+# cam.end() was never called and the LED is still on.
+KILLED_HARD=0
 kill_vcam() {
   pkill -TERM -f "vcam.py" 2>/dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -191,7 +194,25 @@ kill_vcam() {
     sleep 0.2
   done
   pkill -KILL -f "vcam.py" 2>/dev/null || true
+  KILLED_HARD=1
   sleep 0.5
+}
+
+# Last resort for the LED: vcam.py turns it off in cam.end(), but a process
+# killed while blocked in cam.read() never gets there. Try from a separate
+# process, with a timeout, because a wedged camera can make the open hang and
+# `pseye off` still has to return.
+led_off() {
+  if ! present; then return 0; fi
+  if running; then return 0; fi
+  if [[ ! -x "$PY" ]]; then return 0; fi
+  "$PY" "$DIR/led_off.py" >/dev/null 2>&1 &
+  local pid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+    sleep 0.5
+  done
+  kill -KILL "$pid" 2>/dev/null || true
 }
 
 start() {
@@ -234,8 +255,12 @@ stop() {
   ensure_state
   touch "$PAUSE"
   # vcam.py calls cam.end() on the way out, which stops the transfers and
-  # turns the LED off, so there is nothing else to do here.
+  # turns the LED off. Only when it had to be killed does the LED need help.
+  KILLED_HARD=0
   kill_vcam
+  if [[ "$KILLED_HARD" == 1 ]]; then
+    led_off
+  fi
   rm -f "$HEARTBEAT"
   echo "PS Eye: OFF"
 }

@@ -278,6 +278,11 @@ Two consequences worth knowing:
   (`PS3EYECam::start()` sets it, `PS3EYECam::stop()` clears it), and `stop()` is
   only reached through `Camera.end()`. `vcam.py` calls `cam.end()` on the way
   out, so `./pseye off` turns the LED off and releases the USB interface.
+  When the process has to be killed with `SIGKILL` — the camera stopped
+  answering, so `cam.read()` is blocked in C++ and the `SIGTERM` handler never
+  runs — that cleanup is skipped, and `pseye off` falls back to `led_off.py` in
+  a separate process, with a timeout. If the camera has already dropped off the
+  bus, nothing can reach it: only unplugging it turns the LED off.
 - **`Camera.end()` used to abort the process.** PS3EYEDriver's teardown called
   `libusb_cancel_transfer()` on transfers it had already freed, which tripped a
   libusb assertion (`Abort trap: 6`): 5 crashes out of 8 shutdowns with
@@ -339,6 +344,7 @@ ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
 | `pseye` | Control command: `on` / `off` / `toggle` / `status` / `doctor` / `setup` / `uninstall` / `set` / `autostart` |
 | `vcam.py` | PS Eye → system webcam via pyvirtualcam |
 | `vcam.sh` | Convenience launcher for `vcam.py`, with the in-use guard |
+| `led_off.py` | Turns the LED off when `vcam.py` had to be killed and could not do it itself |
 | `mjpeg_server.py` | MJPEG server for an OBS Browser Source; `--index N` selects the camera |
 | `start.sh` | Convenience launcher for the MJPEG server |
 | `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
