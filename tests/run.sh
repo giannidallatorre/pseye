@@ -43,11 +43,12 @@ EOF
 #!/bin/bash
 # Stand-in for vcam.py: writes the heartbeat, then behaves per FAKE_MODE.
 hb="${PSEYE_STATE_DIR}/.heartbeat"
+mkdir -p "$(dirname "$hb")"
 case "${FAKE_MODE:-stream}" in
   exit)     exit 0 ;;
-  stale)    date +%s > "$hb"; sleep 600 ;;
-  stubborn) trap '' TERM; while :; do date +%s > "$hb"; sleep 2; done ;;
-  *)        while :; do date +%s > "$hb"; sleep 2; done ;;
+  stale)    date +%s > "$hb"; sleep 600 ;;                 # opened, no frames
+  stubborn) trap '' TERM; while :; do echo "$(date +%s) 60.0" > "$hb"; sleep 2; done ;;
+  *)        while :; do echo "$(date +%s) 60.0" > "$hb"; sleep 2; done ;;
 esac
 EOF
   chmod +x "$APP/vcam.sh" "$APP/vcam.py"
@@ -82,7 +83,21 @@ camera_present() {
   ioreg -w0 -l -r -n "USB Camera-B4.09.24.1" 2>/dev/null | grep -q "IOUSBHostInterface@0"
 }
 
-webcam_running() { pgrep -f "vcam.py" >/dev/null 2>&1; }
+# A process that has exited but not been reaped still answers pgrep.
+webcam_running() {
+  local pid
+  for pid in $(pgrep -f "vcam.py" 2>/dev/null); do
+    [[ "$(ps -p "$pid" -o stat= 2>/dev/null)" == Z* ]] && continue
+    return 0
+  done
+  return 1
+}
+
+alive_pid() {
+  local st
+  st="$(ps -p "$1" -o stat= 2>/dev/null)"
+  [[ -n "$st" && "$st" != Z* ]]
+}
 
 # ---------------------------------------------------------------- static
 
@@ -100,7 +115,9 @@ else
   skip "shellcheck (not installed)"
 fi
 
-if "$ROOT/.venv/bin/python" -m py_compile "$ROOT/vcam.py" "$ROOT/mjpeg_server.py" "$ROOT/led_off.py" 2>/dev/null; then
+PYBIN="$ROOT/.venv/bin/python"
+[[ -x "$PYBIN" ]] || PYBIN="$(command -v python3)"
+if "$PYBIN" -m py_compile "$ROOT/vcam.py" "$ROOT/mjpeg_server.py" "$ROOT/led_off.py" 2>/dev/null; then
   ok "py_compile"
 else
   bad "py_compile"
@@ -162,6 +179,23 @@ sandbox on_absent
 out="$("$APP/pseye" on 2>&1)"; rc=$?
 [[ $rc -eq 1 ]] && ok "on exits 1 with no camera" || bad "on exits $rc"
 grep -q "not plugged in" <<<"$out" && ok "on says not plugged in" || bad "on message" "$out"
+
+sandbox on_noframes
+export PSEYE_TEST_USB=present FAKE_MODE=stale
+out="$("$APP/pseye" on 2>&1)"; rc=$?
+[[ $rc -eq 1 ]] && ok "on fails when the process runs but no frames arrive" || bad "on exit $rc" "$out"
+grep -q "failed to start (no frames)" <<<"$out" && ok "on says why it failed" || bad "on message" "$out"
+"$APP/pseye" off >/dev/null 2>&1
+
+sandbox on_frames
+export PSEYE_TEST_USB=present FAKE_MODE=stream
+out="$("$APP/pseye" on 2>&1)"; rc=$?
+[[ $rc -eq 0 ]] && ok "on succeeds when frames arrive" || bad "on exit $rc" "$out"
+out="$("$APP/pseye" on --fps 30 2>&1)"
+grep -q "restarting with the new options" <<<"$out" && ok "on with options restarts a running webcam" || bad "on with options was ignored" "$out"
+out="$("$APP/pseye" on 2>&1)"
+grep -q "already running" <<<"$out" && ok "on without options leaves it alone" || bad "on without options" "$out"
+"$APP/pseye" off >/dev/null 2>&1
 
 if webcam_running; then
   skip "off (a webcam is running)"
@@ -252,6 +286,31 @@ kill -TERM $SUP
 wait $SUP 2>/dev/null; rc=$?
 [[ $rc -eq 0 ]] && ok "SIGTERM -> supervisor exits 0" || bad "supervisor exit $rc"
 webcam_running && bad "SIGTERM left the child alive" || ok "SIGTERM takes the child with it"
+
+sandbox sup_stray
+export PSEYE_TEST_USB=absent
+bash "$APP/vcam.py" >/dev/null 2>&1 &
+STRAY=$!
+sleep 1
+"$APP/pseye" supervise >/dev/null 2>&1; rc=$?
+sleep 0.3
+if alive_pid "$STRAY"; then bad "stray vcam.py survived with no camera"; else ok "supervise kills a stray vcam.py when the camera is absent"; fi
+[[ $rc -eq 0 ]] && ok "stray cleanup exits 0" || bad "stray cleanup exit $rc"
+wait $STRAY 2>/dev/null
+
+sandbox sup_adopt
+export PSEYE_TEST_USB=present FAKE_MODE=stale
+bash "$APP/vcam.py" >/dev/null 2>&1 &
+STRAY=$!
+sleep 1
+touch -t 202001010000 "$PSEYE_STATE_DIR/.heartbeat"
+"$APP/pseye" supervise >/dev/null 2>&1 &
+SUP=$!
+sleep 2
+if alive_pid "$STRAY"; then bad "stale vcam.py was adopted"; else ok "supervise kills a stale vcam.py instead of adopting it"; fi
+kill -TERM $SUP 2>/dev/null
+wait $SUP 2>/dev/null
+pkill -f "$APP/vcam.py" 2>/dev/null
 
 sandbox sup_led
 export PSEYE_TEST_USB=present FAKE_MODE=stubborn
