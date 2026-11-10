@@ -256,7 +256,10 @@ def main() -> int:
             print(f"[vcam] PS Eye {args.width}x{args.height} @ {args.fps}fps {mode}"
                   f" -> {vcam.device}", file=sys.stderr, flush=True)
             write_heartbeat()
-            t_heartbeat = time.time()
+            # Start measuring at the first frame: the time spent opening the
+            # camera is not part of the frame rate, and counting it made the
+            # first reading low (24 fps for a 30 fps stream).
+            t_heartbeat = 0.0
             while True:
                 frame, _ts = cam.read()
                 if frame is None:
@@ -284,7 +287,10 @@ def main() -> int:
                 frames += 1
                 frames_hb += 1
                 now = time.time()
-                if now - t_heartbeat >= HEARTBEAT_INTERVAL:
+                if t_heartbeat == 0.0:
+                    t_heartbeat = now
+                    frames_hb = 0
+                elif now - t_heartbeat >= HEARTBEAT_INTERVAL:
                     write_heartbeat(frames_hb / (now - t_heartbeat))
                     frames_hb = 0
                     t_heartbeat = now

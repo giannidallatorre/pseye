@@ -16,6 +16,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTS="$ROOT/tests"
 REAL_PATH="$PATH"
+REAL_HOME="$HOME"
 TMP="$(mktemp -d)"
 # KEEP=1 leaves the sandboxes behind for debugging.
 trap '[[ -n "${KEEP:-}" ]] || rm -rf "$TMP"' EXIT
@@ -63,9 +64,18 @@ realenv() {
   export PATH="$REAL_PATH"
   unset PSEYE_TEST_USB PSEYE_TEST_LAUNCHD PSEYE_TEST_USB_FILE
   unset PSEYE_PYTHON PSEYE_TEST_PYCALLS FAKE_MODE
-  export PSEYE_STATE_DIR="$TMP/real-state"
-  export HOME="$TMP/real-home"
-  mkdir -p "$HOME"
+  # With the auto-start installed, launchd starts vcam.py and inherits neither
+  # HOME nor PSEYE_STATE_DIR, so the camera tests have to use the real ones.
+  if launchctl print "gui/$(id -u)/com.pseye.watch" >/dev/null 2>&1; then
+    export HOME="$REAL_HOME"
+    unset PSEYE_STATE_DIR
+    AGENT=1
+  else
+    export HOME="$TMP/real-home"
+    mkdir -p "$HOME"
+    export PSEYE_STATE_DIR="$TMP/real-state"
+    AGENT=0
+  fi
 }
 
 camera_present() {
@@ -275,7 +285,7 @@ else
       ok "on starts the webcam"
     else
       bad "on exit $rc" "$out"
-      sed 's/^/        log: /' "$PSEYE_STATE_DIR/vcam.log" 2>/dev/null | tail -5
+      sed 's/^/        log: /' "${PSEYE_STATE_DIR:-$HOME/Library/Application Support/pseye}/vcam.log" 2>/dev/null | tail -5
     fi
     sleep 3
     out="$("$ROOT/pseye" status 2>&1)"
@@ -297,7 +307,7 @@ else
     if [[ -n "$fps" && "$fps" -ge 25 && "$fps" -le 35 ]]; then ok "--fps 30 gives ${fps} fps"; else bad "--fps 30 gave '${fps}'" "$out"; fi
 
     # asking for different options while it runs must restart, not be ignored
-    out="$("$ROOT/pseye" on 2>&1)"
+    out="$("$ROOT/pseye" on --fps 60 2>&1)"
     grep -q "restarting with the new options" <<<"$out" && ok "on with options restarts a running webcam" || bad "on with options was ignored" "$out"
     sleep 3
     out="$("$ROOT/pseye" status 2>&1)"
