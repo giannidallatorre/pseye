@@ -1,5 +1,7 @@
 # PSEye — PS3 Eye as a webcam on macOS
 
+[![tests](https://github.com/giannidallatorre/pseye/actions/workflows/tests.yml/badge.svg)](https://github.com/giannidallatorre/pseye/actions/workflows/tests.yml)
+
 > **Fighting obsolescence, one USB device at a time.** The PS Eye shipped in
 > 2007; this keeps it a first-class webcam on a 2026 Mac, because good hardware
 > should not become e-waste just because the drivers stopped.
@@ -351,6 +353,16 @@ CLI, `doctor`, `autostart`, `uninstall` and the supervisor lifecycle (child
 exits on its own, stale heartbeat, unplug, `SIGTERM`, the LED fallback). The
 camera tests are skipped when the PS Eye is not plugged in, and the whole run
 takes about a minute.
+
+GitHub Actions runs `./tests/run.sh cli` on every push to `main` and on every
+pull request (`.github/workflows/tests.yml`). The runner has no camera, so the
+hardware tests skip themselves there; everything else runs.
+
+Several checks exist because of bugs that already happened once: `doctor`
+stopping at `in use` when the camera is unplugged, `pseye on` reporting `ON`
+for a process that never delivered a frame, `on --fps 30` being ignored on a
+running webcam, the supervisor adopting a stuck `vcam.py` instead of replacing
+it, and `autostart remove` leaving `.args` or `launchd.log` behind.
 
 ## Files
 

@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The suite skips shellcheck when it is missing, but it is worth having.
+      - name: shellcheck
+        run: command -v shellcheck >/dev/null || brew install shellcheck
+
+      # The scripts look for .venv/bin/python. The CLI tests only need an
+      # interpreter: the camera stack (pseyepy, libusb, pyvirtualcam) is not
+      # installed here, and the camera tests skip themselves without hardware.
+      - name: virtualenv
+        run: python3 -m venv .venv
+
+      - name: tests
+        run: ./tests/run.sh cli
