@@ -11,7 +11,7 @@
 # with `.venv/bin/python -m ensurepip --upgrade && .venv/bin/python -m pip
 # install Pillow` (setup trims pip from the venv, see `slim` in ./pseye).
 #
-pseyepy @ git+https://github.com/giannidallatorre/pseyepy.git@90894b1
+pseyepy @ git+https://github.com/giannidallatorre/pseyepy.git@35058df
 pyvirtualcam==0.15.0
-numpy==2.5.3
+numpy==2.5.4
 
