@@ -295,6 +295,14 @@ else
     out="$("$ROOT/pseye" status 2>&1)"
     fps="$(sed -n 's/.*(\([0-9]*\) fps).*/\1/p' <<<"$out")"
     if [[ -n "$fps" && "$fps" -ge 25 && "$fps" -le 35 ]]; then ok "--fps 30 gives ${fps} fps"; else bad "--fps 30 gave '${fps}'" "$out"; fi
+
+    # asking for different options while it runs must restart, not be ignored
+    out="$("$ROOT/pseye" on 2>&1)"
+    grep -q "restarting with the new options" <<<"$out" && ok "on with options restarts a running webcam" || bad "on with options was ignored" "$out"
+    sleep 3
+    out="$("$ROOT/pseye" status 2>&1)"
+    fps="$(sed -n 's/.*(\([0-9]*\) fps).*/\1/p' <<<"$out")"
+    if [[ -n "$fps" && "$fps" -ge 40 ]]; then ok "restart without options is back to ${fps} fps"; else bad "restart gave '${fps}'" "$out"; fi
     "$ROOT/pseye" off >/dev/null 2>&1
   fi
 fi

@@ -228,9 +228,18 @@ start() {
   ensure_state
   rm -f "$PAUSE"
   if running; then
-    if heartbeat_fresh; then echo "PS Eye: already running"; return 0; fi
-    echo "PS Eye: process is alive but no frames are arriving; restarting"
-    kill_vcam
+    if ! heartbeat_fresh; then
+      echo "PS Eye: process is alive but no frames are arriving; restarting"
+      kill_vcam
+    elif [[ $# -eq 0 ]]; then
+      echo "PS Eye: already running"
+      return 0
+    else
+      # Options were given, so the caller wants a different stream: restart
+      # instead of silently keeping the old one.
+      echo "PS Eye: restarting with the new options"
+      kill_vcam
+    fi
   fi
   rm -f "$HEARTBEAT"
   if ! present; then echo "PS Eye: not plugged in"; return 1; fi
