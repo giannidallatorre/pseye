@@ -300,7 +300,9 @@ doctor() {
     doctor_line "webcam:" "-" "OFF"
   fi
 
-  owner="$(in_use)"
+  # in_use returns 1 when nothing holds the camera, and `set -e` would abort
+  # the whole check right there, hiding the two lines below it.
+  owner="$(in_use || true)"
   if [[ -z "$owner" ]]; then
     doctor_line "in use:" "-" "no"
   elif [[ "$owner" == *Python* ]] && running; then
