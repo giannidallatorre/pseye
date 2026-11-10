@@ -39,3 +39,16 @@ jobs:
 
       - name: tests
         run: ./tests/run.sh cli
+
+      # When setup fails, say exactly what failed: which import, and what the
+      # compiled extension links against.
+      - name: diagnostics
+        if: failure()
+        run: |
+          uname -m
+          ls .venv/lib/python*/site-packages/pseyepy/ 2>/dev/null || true
+          otool -L .venv/lib/python*/site-packages/pseyepy/cameras*.so 2>/dev/null || true
+          echo "--- import pseyepy"
+          .venv/bin/python -c "import pseyepy" 2>&1 | tail -20 || true
+          echo "--- import pyvirtualcam"
+          .venv/bin/python -c "import pyvirtualcam" 2>&1 | tail -20 || true
