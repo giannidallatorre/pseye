@@ -433,8 +433,9 @@ setup() {
   "$PY" -m pip install --quiet --upgrade pip
   "$PY" -m pip install -r "$DIR/requirements.txt"
 
-  if ! "$PY" -c "import pseyepy, pyvirtualcam" 2>/dev/null; then
-    echo "setup failed: pseyepy or pyvirtualcam does not import (see above)" >&2
+  # Do not hide the traceback: when this fails the reason is the whole point.
+  if ! "$PY" -c "import pseyepy, pyvirtualcam"; then
+    echo "setup failed: pseyepy or pyvirtualcam does not import" >&2
     return 1
   fi
 
