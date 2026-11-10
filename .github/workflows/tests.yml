@@ -11,20 +11,31 @@ permissions:
 
 jobs:
   test:
-    name: macOS
-    runs-on: macos-latest
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is macOS 26 on Apple Silicon, macos-15-intel is the
+        # Intel image. Both matter: pseyepy is compiled C++ linked against
+        # libusb, and that is the only architecture-specific part.
+        os: [macos-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v5
 
-      # The suite skips shellcheck when it is missing, but it is worth having.
       - name: shellcheck
         run: command -v shellcheck >/dev/null || brew install shellcheck
 
-      # The scripts look for .venv/bin/python. The CLI tests only need an
-      # interpreter: the camera stack (pseyepy, libusb, pyvirtualcam) is not
-      # installed here, and the camera tests skip themselves without hardware.
-      - name: virtualenv
-        run: python3 -m venv .venv
+      # The documented install path, on both architectures: Homebrew libusb,
+      # a virtualenv with Python 3.12-3.14, and pseyepy compiled from the
+      # pinned fork. If the driver does not build here, the job fails.
+      - name: setup
+        run: ./pseye setup
+
+      - name: environment
+        run: |
+          uname -m
+          .venv/bin/python -c 'import platform, sys, numpy, pyvirtualcam, pseyepy; print("python", sys.version.split()[0], "|", platform.machine(), "| numpy", numpy.__version__, "| pyvirtualcam", pyvirtualcam.__version__)'
 
       - name: tests
         run: ./tests/run.sh cli
