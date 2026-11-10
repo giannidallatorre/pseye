@@ -16,9 +16,10 @@ into the **OBS Virtual Camera** Camera Extension with
 [pyvirtualcam](https://github.com/letmaik/pyvirtualcam). OBS must be installed
 and its virtual camera activated once, but **OBS does not need to be running**.
 
-Tested on macOS 26.7.1 (Tahoe) on an **Intel** Mac with libusb 1.0.30. Nothing
-here is architecture-specific (pseyepy builds a universal x86_64/arm64 binary),
-so Apple Silicon should work too, but it has not been tested there.
+Tested on macOS 26.7.1 (Tahoe) on an **Intel** Mac with libusb 1.0.30. CI
+builds the driver and runs the suite on both Apple Silicon (`macos-latest`) and
+Intel (`macos-15-intel`), so both architectures are covered at the build and
+command-line level; the camera itself has only been exercised on Intel.
 
 ## Requirements
 
@@ -39,7 +40,7 @@ That installs `libusb` with Homebrew (or lets pseyepy build its bundled copy
 when Homebrew is missing, which needs the Xcode Command Line Tools), creates
 `.venv` and installs the pinned dependencies. It is idempotent: run it again
 after a `git pull`. At the end it trims the virtualenv — numpy's test suite and
-`pip` are removed, which halves it (57 MB → 28 MB); a later `setup` puts `pip`
+`pip` are removed, which halves it (57 MB → 27 MB); a later `setup` puts `pip`
 back with `ensurepip`.
 
 The equivalent manual steps are:
