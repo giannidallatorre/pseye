@@ -301,6 +301,7 @@ Two consequences worth knowing:
 |---|---|
 | `vcam.sh`: *the PS Eye is already in use* | another process holds it → `pkill -f mjpeg_server.py` (or `pkill -f vcam.py`) |
 | `status` says `ON (no frames)` | the USB link fell back to full speed (12 Mbps): `pseye status` / `pseye doctor` show the link speed; it must be 480 Mbps. Plug the camera directly into the Mac, not into a hub |
+| `ON (no frames)` with the link at 480 Mbps | the camera stopped answering: the kernel log shows `status 0xe00002ed (transaction error)` on endpoint 0x81, which is `kIOReturnNotResponding`. Unplug and plug it back in — reopening it is not enough, the device stays wedged |
 | Zoom does not see `OBS Virtual Camera` | the OBS virtual camera was never activated: open OBS → *Start Virtual Camera* → *Stop* → quit |
 | `pyvirtualcam`: *OBS Virtual Camera is not installed* | same as above: OBS must be installed and its virtual camera activated once |
 | Zoom does not see the webcam you just started | Zoom caches the camera list: restart Zoom |
@@ -318,8 +319,8 @@ Two consequences worth knowing:
 ```bash
 # grab a frame from the system webcam and check it is not black
 IDX=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "OBS Virtual Camera" | sed -E 's/.*\[([0-9]+)\].*/\1/')
-ffmpeg -y -f avfoundation -framerate 60 -video_size 1920x1080 -i "${IDX}:none" -frames:v 1 -update 1 /tmp/cap.png
-.venv/bin/python -c "from PIL import Image; import numpy as np; a=np.asarray(Image.open('/tmp/cap.png').convert('RGB')); print('mean', a.reshape(-1,3).mean(0).round(1), 'std', a.reshape(-1,3).std(0).round(1))"
+ffmpeg -y -f avfoundation -framerate 60 -video_size 1920x1080 -i "${IDX}:none" -frames:v 1 -f rawvideo -pix_fmt rgb24 /tmp/cap.raw
+.venv/bin/python -c "import numpy as np; a=np.fromfile('/tmp/cap.raw',dtype=np.uint8).reshape(1080,1920,3); print('mean', a.reshape(-1,3).mean(0).round(1), 'std', a.reshape(-1,3).std(0).round(1))"
 
 # MJPEG mode: count JPEG frames in 3 seconds
 curl -s --max-time 3 http://localhost:8090/stream -o /tmp/t.bin && \
