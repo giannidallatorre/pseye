@@ -56,3 +56,17 @@ That is why the LED is controlled by writing bit 7 of registers `0x21` and
 - [teknoman117/StereoPS3Eye](https://github.com/teknoman117/StereoPS3Eye),
   [pio127/stereo-camera-opencv](https://github.com/pio127/stereo-camera-opencv) —
   true stereo with two PS Eyes.
+
+## Legal notes
+
+This project does **not** redistribute OBS Studio or its Camera Extension. It
+uses the extension that OBS installs, through Apple's public `CMIOExtension`
+framework: the extension exposes a *sink* stream and authorises any client, which
+is exactly how OBS itself feeds it. Nothing is patched, re-signed or bypassed —
+the extension is activated once through System Settings, as Apple requires.
+
+The PS Eye protocol is proprietary and undocumented by Sony; the reverse
+engineering was done by the authors of PS3EYEDriver and pseyepy, whose code has
+been public for well over a decade. This project only uses their work.
+
+*This is a technical reading of the licenses involved, not legal advice.*

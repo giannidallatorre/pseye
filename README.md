@@ -202,111 +202,30 @@ nothing else needs it) and the third belongs to OBS.
 Nothing is installed system-wide: no kext, no DAL plugin, no files outside this
 directory, `~/Library/Application Support/pseye/` and `~/Library/LaunchAgents/`.
 
-## Two PS Eyes at once
-
-Each camera is served by a separate process, on a different port, with `--index`
-selecting the camera (0-based):
-
-```bash
-./start.sh --index 0 --port 8090   # first PS Eye
-./start.sh --index 1 --port 8091   # second PS Eye
-```
-
-In OBS add two Browser Sources, one per port, and compose them in a scene.
-
-Two caveats:
-
-- **USB bandwidth.** Two PS Eyes at 640x480 @ 60 fps on the same USB 2.0
-  controller can saturate the bus (one camera at VGA/60 already uses ~30-40 MB/s).
-  If one stutters, use `--res qvga` or `--fps 30` on it, or plug the cameras into
-  different USB controllers.
-- **Single output.** `OBS Virtual Camera` is one webcam, so the two cameras are
-  composited into a single stream. Two independently selectable webcams require
-  NDI Virtual Input.
-
 ## Alternative mode: MJPEG server
 
-Instead of feeding the virtual camera directly, the frames can be served over
-HTTP as MJPEG and consumed by an OBS Browser Source. This is useful when you want
-OBS to do the compositing.
-
-```bash
-./start.sh                      # http://localhost:8090, 30 fps, VGA
-./start.sh --res qvga --fps 60  # 320x240 @ 60 fps
-./start.sh --quality 90         # sharper JPEG
-./start.sh --port 8091          # different port
-```
-
-In OBS: `+` → **Browser** → URL `http://localhost:8090`, then
-`Start Virtual Camera`. Stop the server with Ctrl-C or `pkill -f mjpeg_server.py`.
-
-This mode is the only one that needs **Pillow**, which is therefore not in
-`requirements.txt` (the virtual camera path does not use it):
-
-```bash
-.venv/bin/python -m ensurepip --upgrade   # setup trims pip from the venv
-.venv/bin/python -m pip install Pillow
-```
+The frames can also be served over HTTP as MJPEG for an OBS Browser Source,
+which is useful when you want OBS to do the compositing, and it is the way to
+run two PS Eyes at once. It needs Pillow, which the virtual camera path does
+not. See [`docs/mjpeg.md`](docs/mjpeg.md).
 
 ## How it works
 
 ```
 PS3 Eye ──libusb──> pseyepy ──> vcam.py ──pyvirtualcam──> OBS Virtual Camera
-                                                                    │
-                                                                    ▼
-                                                          Zoom / Meet / ...
 ```
 
-The PS Eye (VID:PID `1415:2000`, OV534 bridge, OV7720/OV7725 sensor) speaks a
-proprietary Sony protocol, not UVC. macOS therefore never registers it in
-CoreMediaIO/AVFoundation, and applications only see cameras registered there.
-Reading it over libusb gives you *capture*, not a *webcam* — the bridge to a
-system-wide webcam is the OBS Camera Extension, which pyvirtualcam drives
-directly through its `obs_cmioextension` backend.
-
-Two consequences worth knowing:
-
-- The OBS Camera Extension advertises a single mode, **1920x1080 @ 60**, but it
-  does not upscale: it forwards the buffer pyvirtualcam sends, so a 640x480
-  client produces 640x480 frames (measured with ffmpeg). The only conversion is
-  RGB→UYVY, done in C by `libyuv` inside pyvirtualcam.
-- The PS Eye's **4-microphone array** is a standard USB Audio Class device and
-  macOS exposes it natively as `USB Camera-B4.09.24.1` (4 channels, 16 kHz). No
-  driver needed; select it directly in Zoom or route it through OBS.
-
-## Notes and limitations
-
-- **The LED.** The LED is driven by the camera's own registers
-  (`PS3EYECam::start()` sets it, `PS3EYECam::stop()` clears it), and `stop()` is
-  only reached through `Camera.end()`. `vcam.py` calls `cam.end()` on the way
-  out, so `./pseye off` turns the LED off and releases the USB interface.
-  When the process has to be killed with `SIGKILL` — the camera stopped
-  answering, so `cam.read()` is blocked in C++ and the `SIGTERM` handler never
-  runs — that cleanup is skipped, and `pseye off` falls back to `led_off.py` in
-  a separate process, with a timeout. If the camera has already dropped off the
-  bus, nothing can reach it: only unplugging it turns the LED off.
-- **`Camera.end()` used to abort the process.** PS3EYEDriver's teardown called
-  `libusb_cancel_transfer()` on transfers it had already freed, which tripped a
-  libusb assertion (`Abort trap: 6`): 5 crashes out of 8 shutdowns with
-  pyvirtualcam running. The fix is in the pseyepy fork this project pins
-  (`23624c2`, also in [`patches/`](patches/)); with it, 10 out of 10 on/off
-  cycles are clean. `vcam.py` still exits with `os._exit(0)` so that shutdown
-  can never hang.
-- **Zoom caches the camera list** at launch: restart Zoom after changing which
-  cameras are available.
-- **`vcam.sh` refuses to start** if another process already holds the camera's
-  video interface (it checks `UsbExclusiveOwner` on `IOUSBHostInterface@0` via
-  `ioreg`). This avoids the segfault pseyepy hits when the device is already open.
-- The PS Eye has a **single sensor**; it is not a stereo camera. `cam_count()`
-  returns 1 per device. True stereo needs two cameras plus calibration.
-- `libusb: darwin_reenumerate_device ... not opened for exclusive access` on
-  close is a harmless known warning.
+The PS Eye is not UVC, so macOS never registers it as a camera. This project
+reads it in user space over libusb and feeds the OBS Camera Extension, which is
+what applications see. The details — the 1920x1080 mode that does not upscale,
+the microphone, the LED, the teardown crash, the warnings that are harmless —
+are in [`docs/how-it-works.md`](docs/how-it-works.md).
 
 ## Troubleshooting
 
 | Symptom | Cause / remedy |
 |---|---|
-| `vcam.sh`: *the PS Eye is already in use* | another process holds it → `pkill -f mjpeg_server.py` (or `pkill -f vcam.py`) |
+| `vcam.sh`: *the PS Eye is already in use* | another process holds it → `pkill -f mjpeg_server.py`, or `./pseye off` for our own `vcam.py` |
 | `status` says `ON (no frames)` | the USB link fell back to full speed (12 Mbps): `pseye status` / `pseye doctor` show the link speed; it must be 480 Mbps. Plug the camera directly into the Mac, not into a hub |
 | `ON (no frames)` with the link at 480 Mbps | the camera stopped answering: the kernel log shows `status 0xe00002ed (transaction error)` on endpoint 0x81, which is `kIOReturnNotResponding`. Unplug and plug it back in — reopening it is not enough, the device stays wedged |
 | Zoom does not see `OBS Virtual Camera` | the OBS virtual camera was never activated: open OBS → *Start Virtual Camera* → *Stop* → quit |
@@ -317,27 +236,15 @@ Two consequences worth knowing:
 | No audio in Zoom | wrong microphone: pick `USB Camera-B4.09.24.1` |
 | Double audio / echo | both `Mic/Aux` (system mic) and the PS Eye are active: pick one |
 | Stuttering video | lower `--quality`, or switch to `--res qvga` / `--fps 30` |
-| Two PS Eyes: the second will not open, or one stutters | USB 2.0 bandwidth saturated: see *Two PS Eyes at once* |
+| Two PS Eyes: the second will not open, or one stutters | USB 2.0 bandwidth saturated: see [`docs/mjpeg.md`](docs/mjpeg.md#two-ps-eyes-at-once) |
 | `--index 1` → *No camera available at index 1* | index does not exist: start without `--index` and read `Connected PS3 Eye cameras: N` |
 | Microphone permission denied | *System Settings → Privacy & Security → Microphone* → enable Zoom/OBS |
 
 ## Verifying it works
 
-```bash
-# grab a frame from the system webcam and check it is not black
-IDX=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "OBS Virtual Camera" | sed -E 's/.*\[([0-9]+)\].*/\1/')
-ffmpeg -y -f avfoundation -framerate 60 -video_size 1920x1080 -i "${IDX}:none" -frames:v 1 -f rawvideo -pix_fmt rgb24 /tmp/cap.raw
-.venv/bin/python -c "import numpy as np; a=np.fromfile('/tmp/cap.raw',dtype=np.uint8).reshape(1080,1920,3); print('mean', a.reshape(-1,3).mean(0).round(1), 'std', a.reshape(-1,3).std(0).round(1))"
-
-# MJPEG mode: count JPEG frames in 3 seconds
-curl -s --max-time 3 http://localhost:8090/stream -o /tmp/t.bin && \
-  python3 -c "d=open('/tmp/t.bin','rb').read(); print('frames:', d.count(b'\xff\xd8\xff'))"
-
-# audio: record 3 s from the PS Eye microphone and measure the level
-AUDIO=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "USB Camera-B4.09.24.1" | sed -E 's/.*\[([0-9]+)\].*/\1/')
-ffmpeg -f avfoundation -i ":${AUDIO}" -t 3 -ac 1 -ar 16000 -y /tmp/a.wav && \
-  ffmpeg -i /tmp/a.wav -af volumedetect -f null - 2>&1 | grep volume
-```
+`./pseye doctor` checks the whole chain and is the first thing to run. To look
+at the actual frames, or at the microphone, see
+[`docs/verifying.md`](docs/verifying.md).
 
 ## Tests
 
@@ -377,6 +284,7 @@ it, and `autostart remove` leaving `.args` or `launchd.log` behind.
 | `requirements.txt` | Pinned Python dependencies (pseyepy from fork, pyvirtualcam, NumPy); Pillow only for the MJPEG server |
 | `patches/` | Fixes for the PS3EYEDriver teardown crash (upstream and pseyepy) |
 | `tests/` | Test suite: `./tests/run.sh`, with stubs for `ioreg` and `launchctl` |
+| `docs/` | Reference material: how it works, verifying by hand, the MJPEG mode |
 | `~/Library/Application Support/pseye/` | Runtime state, not code: `vcam.log`, `launchd.log`, `.settings`, `.heartbeat`, `.paused`, `.args` (override with `PSEYE_STATE_DIR`) |
 
 ## License
@@ -388,17 +296,9 @@ it builds on, including the MIT/GPL-2.0 split of PS3EYEDriver.
 
 ### Legal notes
 
-This project does **not** redistribute OBS Studio or its Camera Extension. It
-uses the extension that OBS installs, through Apple's public `CMIOExtension`
-framework: the extension exposes a *sink* stream and authorises any client, which
-is exactly how OBS itself feeds it. Nothing is patched, re-signed or bypassed —
-the extension is activated once through System Settings, as Apple requires.
-
-The PS Eye protocol is proprietary and undocumented by Sony; the reverse
-engineering was done by the authors of PS3EYEDriver and pseyepy, whose code has
-been public for well over a decade. This project only uses their work.
-
-*This is a technical reading of the licenses involved, not legal advice.*
+This project does not redistribute OBS Studio or its Camera Extension, and the
+PS Eye protocol was reverse engineered by others. The details are in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md#legal-notes).
 
 ## Credits
 
