@@ -252,14 +252,17 @@ start() {
   else
     nohup "$DIR/vcam.sh" "$@" >"$LOG" 2>&1 &
   fi
-  # Wait up to 5 s for the first heartbeat: a live process is not enough,
-  # frames must actually be flowing. With the agent in charge the start goes
-  # through launchd, which can add a tick, so allow it twice as long.
+  # Wait for frames, not just for a process: vcam.py writes a heartbeat as
+  # soon as it has opened the camera, before the first frame, so a fresh
+  # heartbeat alone would report ON for a camera that never delivers. The fps
+  # field only appears once frames are flowing, so require that. With the
+  # agent in charge the start goes through launchd, which can add a tick, so
+  # allow it twice as long.
   local tries=25
   if agent_loaded; then tries=50; fi
   for _ in $(seq 1 "$tries"); do
     sleep 0.2
-    if running && heartbeat_fresh; then
+    if running && heartbeat_fresh && [[ -n "$(heartbeat_fps)" ]]; then
       echo "PS Eye: ON  (log: $LOG)"
       return 0
     fi
