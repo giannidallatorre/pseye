@@ -68,6 +68,10 @@ class Capture:
                 print("read error:", exc, file=sys.stderr)
                 time.sleep(0.1)
                 continue
+            if isinstance(frame, list):
+                # ids=None opens every connected camera and read() then returns
+                # a list; this server serves a single stream, so take the first.
+                frame = frame[0]
             data = jpeg(frame, self.quality)
             with self.lock:
                 self.latest = data
