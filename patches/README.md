@@ -135,7 +135,7 @@ and is left alone to keep this patch minimal and reviewable.
 ## Use in this project
 
 The patch is applied in the pseyepy fork this project pins
-(`giannidallatorre/pseyepy@8338572`, commit `23624c2`), so `vcam.py` calls
+(`giannidallatorre/pseyepy@c0e4de0`, commit `23624c2`), so `vcam.py` calls
 `Camera.end()` on the way out: it stops the transfers, turns the LED off and
 releases the USB interface. Ten consecutive `pseye off` + `pseye on` cycles are
 clean. `vcam.py` still ends with `os._exit(0)` so that interpreter shutdown can
