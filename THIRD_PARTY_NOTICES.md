@@ -8,7 +8,7 @@ other people's code; this file records what is used and under which terms.
 | Component | Version used | License | Role |
 |---|---|---|---|
 | [pyvirtualcam](https://github.com/letmaik/pyvirtualcam) | 0.15.0 | **GPL-2.0** | Feeds frames to the OBS Camera Extension (`obs_cmioextension` backend) |
-| [pseyepy](https://github.com/giannidallatorre/pseyepy) | fork `c0e4de0` | Apache-2.0 | Python wrapper around PS3EYEDriver (with teardown, debayer and camera-id fixes, and a clean build) |
+| [pseyepy](https://github.com/giannidallatorre/pseyepy) | fork `2328b35` | Apache-2.0 | Python wrapper around PS3EYEDriver (with teardown, debayer and camera-id fixes, and a clean build) |
 | [PS3EYEDriver](https://github.com/inspirit/PS3EYEDriver) | vendored in pseyepy | MIT **and** GPL-2.0 | The actual C driver (see below) |
 | [libusb](https://github.com/libusb/libusb) | 1.0.30 | LGPL-2.1 | USB access, linked by PS3EYEDriver |
 | [Pillow](https://python-pillow.org/) | 12.3.0 | MIT-CMU (HPND) | JPEG encoding in `mjpeg_server.py` |
