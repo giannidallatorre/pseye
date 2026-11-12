@@ -40,6 +40,10 @@ SETTINGS="$STATE_DIR/.settings"
 # Options for the agent to pass to vcam.py (`pseye on --fps 30`). Only written
 # when the agent is installed: it is the agent's state, not the user's.
 ARGS="$STATE_DIR/.args"
+# Consecutive failed starts. A camera that is present but unusable (held by
+# another process, broken venv, USB at 12 Mbps) would otherwise get a new
+# process every 5 s forever: 17k spawns a day and a log that never stops.
+FAILURES="$STATE_DIR/.failures"
 UID_NUM="$(id -u)"
 # What identifies our process. The absolute path, not the bare file name:
 # `pkill -f vcam.py` also matches `vim vcam.py`, `less vcam.py` and a `grep`,
@@ -186,12 +190,41 @@ heartbeat_age() {
   mtime="$(stat -f %m "$HEARTBEAT" 2>/dev/null || stat -c %Y "$HEARTBEAT" 2>/dev/null || echo 0)"
   echo $((now - mtime))
 }
-heartbeat_fresh() { [[ "$(heartbeat_age)" -le 6 ]]; }
+# Five missed beats, not three: under a heavy build (load average in the
+# hundreds) a healthy vcam.py can be starved for more than 6 s, and killing it
+# then is worse than waiting a little longer for a real stall.
+heartbeat_fresh() { [[ "$(heartbeat_age)" -le 10 ]]; }
 
 # vcam.py writes "<timestamp> <fps>" in the heartbeat; older versions wrote the
 # timestamp alone, so the fps is optional.
 heartbeat_fps() {
   awk 'NF > 1 { printf "%d", $2 }' "$HEARTBEAT" 2>/dev/null
+}
+
+# True while a run of failed starts is still in its backoff window.
+backoff_left() {
+  [[ -f "$FAILURES" ]] || return 1
+  local count last now wait
+  read -r count last < "$FAILURES" || return 1
+  [[ "$count" -ge 3 ]] || return 1
+  (( count > 10 )) && count=10
+  now="$(date +%s)"
+  wait=$(( 15 << (count - 3) ))     # 15, 30, 60, 120, 240, then 300
+  (( wait > 300 )) && wait=300
+  (( now - last < wait ))
+}
+
+record_failure() {
+  local count=0 last=0
+  [[ -f "$FAILURES" ]] && read -r count last < "$FAILURES"
+  printf '%s %s\n' "$(( count + 1 ))" "$(date +%s)" > "$FAILURES"
+}
+
+# vcam.log is appended to and never rotated; keep it from growing forever.
+trim_log() {
+  [[ -f "$LOG" ]] || return 0
+  (( $(stat -f %z "$LOG" 2>/dev/null || echo 0) > 1048576 )) && : > "$LOG"
+  return 0
 }
 
 # SIGTERM is not enough when vcam.py is blocked inside cam.read(): Python only
@@ -516,6 +549,9 @@ case "${1:-status}" in
     # logout, which is what lets vcam.py run cam.end().
     if [[ -f "$PAUSE" ]]; then exit 0; fi
     if ! present; then
+      # The camera is gone: forget the failures, so plugging it back in
+      # retries immediately instead of waiting out a backoff.
+      rm -f "$FAILURES"
       # A vcam.py left behind by a previous supervisor (or by the old `watch`)
       # would keep the camera claimed forever and make every later start fail.
       # The old tick killed it here too; nothing to start, so clean up and go.
@@ -532,8 +568,10 @@ case "${1:-status}" in
       kill_vcam
       rm -f "$HEARTBEAT"
     fi
+    if backoff_left; then exit 0; fi
     ensure_state
     rm -f "$HEARTBEAT"
+    trim_log
 
     child=""
     # `kill -0` succeeds on a zombie, so ask ps for the state instead.
@@ -574,9 +612,11 @@ case "${1:-status}" in
       heartbeat_fresh && break
       sleep 0.2
     done
+    if heartbeat_fresh; then rm -f "$FAILURES"; fi
 
     while :; do
       if ! alive; then
+        record_failure
         wait "$child" 2>/dev/null || true
         exit 0
       fi
@@ -594,6 +634,7 @@ case "${1:-status}" in
       if ! heartbeat_fresh; then
         # Alive but not producing frames: kill it and let the next tick start
         # a fresh one.
+        record_failure
         kill_vcam
         wait "$child" 2>/dev/null || true
         exit 1
