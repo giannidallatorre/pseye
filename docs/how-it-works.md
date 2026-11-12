@@ -73,3 +73,38 @@ says `ON (no frames)` while the USB link is still 480 Mbps. Reopening the device
 is not enough — only unplugging and plugging it back in brings it back. A
 different port or cable is worth trying: the same camera that wedged on one port
 has run for an hour on another.
+
+## When the camera drops off the bus by itself
+
+It also happens with nothing running: the camera disappears from the USB bus on
+its own, `pseye status` reports `usb: -`, and the kernel log says
+
+```
+HS02@14200000: AppleUSBHostPort::terminateDevice: destroying
+  0x1415/2000/0200 (USB Camera-B4.09.24.1): hardware connection lost
+```
+
+That message is the same one a physical unplug produces, so it does not tell the
+two apart. The next line does. A real unplug stays gone until someone plugs it
+back in:
+
+```
+12:37:42.024  terminateDevice: ... hardware connection lost
+12:37:46.587  enumerated ... at 480 Mbps          <- 4.5 s later, the replug
+```
+
+A device-side glitch comes back on its own and drops again immediately:
+
+```
+09:58:54.220  terminateDevice: ... hardware connection lost
+09:58:54.227  enumerated ... at 480 Mbps          <- 7 ms later
+09:58:54.397  terminateDevice: ... hardware connection lost
+```
+
+Nobody replugs in 7 ms: that is the device's D+ pull-up bouncing. It is rare
+(once in about three hours of use here) and it is not reproducible — ten
+consecutive on/off cycles, two full test runs and half an hour idle did not
+trigger it. Nothing in `pseye` or `vcam.py` causes it and nothing there can
+prevent it; the only recovery is a replug. With the auto-start installed the
+supervisor notices the camera is gone, stops `vcam.py`, and starts it again when
+the camera comes back, so the replug is all you have to do.

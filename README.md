@@ -229,6 +229,7 @@ are in [`docs/how-it-works.md`](docs/how-it-works.md).
 | `vcam.sh`: *the PS Eye is already in use* | another process holds it → `pkill -f mjpeg_server.py`, or `./pseye off` for our own `vcam.py` |
 | `status` says `ON (no frames)` | the USB link fell back to full speed (12 Mbps): `pseye status` / `pseye doctor` show the link speed; it must be 480 Mbps. Plug the camera directly into the Mac, not into a hub |
 | `ON (no frames)` with the link at 480 Mbps | the camera stopped answering: the kernel log shows `status 0xe00002ed (transaction error)` on endpoint 0x81, which is `kIOReturnNotResponding`. Unplug and plug it back in — reopening it is not enough, the device stays wedged |
+| `status` says `usb: -` with the camera plugged in | it dropped off the bus on its own (`hardware connection lost` in the kernel log). Rare and not reproducible; only a replug brings it back. See [docs/how-it-works.md](docs/how-it-works.md#when-the-camera-drops-off-the-bus-by-itself) |
 | Zoom does not see `OBS Virtual Camera` | the OBS virtual camera was never activated: open OBS → *Start Virtual Camera* → *Stop* → quit |
 | `pyvirtualcam`: *OBS Virtual Camera is not installed* | same as above: OBS must be installed and its virtual camera activated once |
 | Zoom does not see the webcam you just started | Zoom caches the camera list: restart Zoom |
