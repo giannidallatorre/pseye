@@ -22,6 +22,7 @@ import os
 import signal
 import sys
 import time
+import traceback
 
 import numpy as np
 import pyvirtualcam
@@ -93,11 +94,16 @@ def read_settings() -> dict:
 
 
 def write_settings(values: dict) -> None:
+    # Written to a temporary file and renamed: `pseye set` reads this file
+    # while vcam.py may be rewriting it, and a half-written one would be
+    # parsed as a corrupt setting.
+    tmp = SETTINGS + ".tmp"
     try:
-        with open(SETTINGS, "w") as fh:
+        with open(tmp, "w") as fh:
             for key in PARAM_ORDER:
                 if key in values:
                     fh.write(f"{key}={values[key]}\n")
+        os.replace(tmp, SETTINGS)
     except OSError:
         pass
 
@@ -234,12 +240,22 @@ def main() -> int:
     resolution = Camera.RES_LARGE if args.width >= 640 else Camera.RES_SMALL
     colour = not args.gray
     cam = Camera(ids=[args.camera], resolution=resolution, fps=args.fps, colour=colour)
-    baseline = read_baseline(cam)
-    # Saved settings first, then the flags given on this command line. They are
-    # applied after the first frame: enabling AWB/AGC before the sensor has
-    # produced one leaves them in a state where they never converge.
-    settings = {**DEFAULTS, **read_settings()}
-    settings.update(cli_overrides(args))
+    # Everything between opening the camera and the try below used to be
+    # unguarded: an exception there skipped the finally, so cam.end() never ran
+    # and the LED stayed on with the device still claimed. Close it here too.
+    try:
+        baseline = read_baseline(cam)
+        # Saved settings first, then the flags given on this command line. They
+        # are applied after the first frame: enabling AWB/AGC before the sensor
+        # has produced one leaves them in a state where they never converge.
+        settings = {**DEFAULTS, **read_settings()}
+        settings.update(cli_overrides(args))
+    except Exception:
+        try:
+            cam.end()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
     pending = True
 
     frames = 0
@@ -247,6 +263,7 @@ def main() -> int:
     t0 = time.time()
     t_last = t0
     t_heartbeat = 0.0
+    exit_code = 0
     try:
         fmt = pyvirtualcam.PixelFormat.GRAY if args.gray else pyvirtualcam.PixelFormat.RGB
         with pyvirtualcam.Camera(width=args.width, height=args.height,
@@ -260,13 +277,28 @@ def main() -> int:
             # camera is not part of the frame rate, and counting it made the
             # first reading low (24 fps for a 30 fps stream).
             t_heartbeat = 0.0
+            none_streak = 0
             while True:
                 frame, _ts = cam.read()
                 if frame is None:
+                    # pseyepy does not return None today, but if it ever does
+                    # this must not turn into a busy loop that burns a core.
+                    none_streak += 1
+                    if none_streak > 300:      # ~5 s at 60 fps
+                        raise RuntimeError("camera stopped delivering frames")
+                    time.sleep(0.01)
                     continue
+                none_streak = 0
                 if pending:
-                    apply_settings(cam, settings, baseline)
-                    write_settings(settings)
+                    # A hand-edited .settings with gain=abc used to raise here,
+                    # outside the try/except below, and take the camera down
+                    # without a word. Keep the camera, skip the settings.
+                    try:
+                        apply_settings(cam, settings, baseline)
+                        write_settings(settings)
+                    except (OSError, ValueError) as exc:
+                        print(f"[vcam] settings not applied: {exc}",
+                              file=sys.stderr, flush=True)
                     pending = False
                 if reload_settings:
                     reload_settings = False
@@ -303,6 +335,11 @@ def main() -> int:
                         t_last = now
     except KeyboardInterrupt:
         pass
+    except Exception:  # noqa: BLE001
+        # Anything else is a failure: say so in the exit code instead of
+        # always reporting success.
+        traceback.print_exc()
+        exit_code = 1
     finally:
         print(f"[vcam] closed after {time.time() - t0:.1f}s", file=sys.stderr, flush=True)
         # cam.end() stops the transfers and turns the LED off (PS3EYECam::stop()
@@ -316,7 +353,7 @@ def main() -> int:
             print(f"[vcam] cam.end() failed: {exc}", file=sys.stderr, flush=True)
         # Still exit hard: it guarantees we never hang in interpreter shutdown
         # (pseyepy's atexit handler would call end() again, which is a no-op).
-        os._exit(0)
+        os._exit(exit_code)
     return 0
 
 
