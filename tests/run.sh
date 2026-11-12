@@ -73,7 +73,7 @@ realenv() {
   unset PSEYE_PYTHON PSEYE_TEST_PYCALLS FAKE_MODE
   # With the auto-start installed, launchd starts vcam.py and inherits neither
   # HOME nor PSEYE_STATE_DIR, so the camera tests have to use the real ones.
-  if launchctl print "gui/$(id -u)/com.pseye.watch" >/dev/null 2>&1; then
+  if launchctl print "gui/$(id -u)/com.pseye.agent" >/dev/null 2>&1; then
     export HOME="$REAL_HOME"
     unset PSEYE_STATE_DIR
     AGENT=1
@@ -223,7 +223,7 @@ group "autostart"
 
 sandbox autostart
 "$APP/pseye" autostart install >/dev/null 2>&1
-PLIST="$HOME/Library/LaunchAgents/com.pseye.watch.plist"
+PLIST="$HOME/Library/LaunchAgents/com.pseye.agent.plist"
 [[ -f "$PLIST" ]] && ok "install writes the plist" || bad "install plist"
 grep -q "<string>supervise</string>" "$PLIST" && ok "plist runs supervise" || bad "plist program"
 grep -q "<key>ThrottleInterval</key><integer>1</integer>" "$PLIST" && ok "plist sets ThrottleInterval 1" || bad "plist throttle"
@@ -240,6 +240,27 @@ for f in .args launchd.log .paused; do
   [[ ! -f "$PSEYE_STATE_DIR/$f" ]] && ok "remove deletes $f" || bad "remove left $f"
 done
 
+# The label used to be com.pseye.watch, after the `watch` verb that `supervise`
+# replaced. An install from before the rename is still on disk and launchd
+# would keep running `pseye watch`, which no longer exists.
+sandbox autostart_old
+OLD="$HOME/Library/LaunchAgents/com.pseye.watch.plist"
+printf 'old\n' > "$OLD"
+"$APP/pseye" autostart install >/dev/null 2>&1
+[[ ! -f "$OLD" ]] && ok "install removes the pre-rename plist" || bad "old plist survived install"
+[[ -f "$HOME/Library/LaunchAgents/com.pseye.agent.plist" ]] && ok "install writes the new plist" || bad "new plist missing"
+
+sandbox autostart_old_remove
+OLD="$HOME/Library/LaunchAgents/com.pseye.watch.plist"
+printf 'old\n' > "$OLD"
+"$APP/pseye" autostart remove >/dev/null 2>&1
+[[ ! -f "$OLD" ]] && ok "remove deletes the pre-rename plist" || bad "old plist survived remove"
+
+sandbox autostart_old_status
+printf 'old\n' > "$HOME/Library/LaunchAgents/com.pseye.watch.plist"
+out="$("$APP/pseye" status 2>&1)"
+[[ "$out" == *"old label"* ]] && ok "status flags a pre-rename install" || bad "status missed the old label" "$out"
+
 # ---------------------------------------------------------------- uninstall
 
 group "uninstall"
@@ -252,7 +273,7 @@ else
   touch "$PSEYE_STATE_DIR/vcam.log" "$PSEYE_STATE_DIR/.settings"
   "$APP/pseye" uninstall -y >/dev/null 2>&1
   [[ ! -d "$PSEYE_STATE_DIR" ]] && ok "uninstall removes the state dir" || bad "uninstall state dir"
-  [[ ! -f "$HOME/Library/LaunchAgents/com.pseye.watch.plist" ]] && ok "uninstall removes the plist" || bad "uninstall plist"
+  [[ ! -f "$HOME/Library/LaunchAgents/com.pseye.agent.plist" ]] && ok "uninstall removes the plist" || bad "uninstall plist"
 fi
 
 # ---------------------------------------------------------------- supervise
@@ -335,6 +356,55 @@ bash "$APP/vcam.py" >/dev/null 2>&1 &
 sleep 1
 "$APP/pseye" off >/dev/null 2>&1
 grep -q "led_off.py" "$SB/pycalls" 2>/dev/null && ok "hard kill falls back to led_off.py" || bad "led_off.py not called"
+
+# A supervisor with no backoff respawns a vcam.py that dies at once every 5 s
+# forever: 17k failed spawns a day and a log that grows without limit. After
+# three consecutive failures it has to wait instead.
+sandbox sup_backoff
+export PSEYE_TEST_USB=present FAKE_MODE=stream
+mkdir -p "$PSEYE_STATE_DIR"
+printf '3 %s\n' "$(date +%s)" > "$PSEYE_STATE_DIR/.failures"
+"$APP/pseye" supervise >/dev/null 2>&1; rc=$?
+sleep 0.3
+fake_running && bad "backoff ignored: a child was spawned" || ok "backoff stops the respawn after 3 failures"
+[[ $rc -eq 0 ]] && ok "backoff exits 0" || bad "backoff exit $rc"
+
+# Plugging the camera back in must clear the counter, or the retry waits out a
+# backoff whose cause is gone.
+sandbox sup_backoff_reset
+export PSEYE_TEST_USB=absent
+mkdir -p "$PSEYE_STATE_DIR"
+printf '5 %s\n' "$(date +%s)" > "$PSEYE_STATE_DIR/.failures"
+"$APP/pseye" supervise >/dev/null 2>&1
+[[ -f "$PSEYE_STATE_DIR/.failures" ]] && bad "failures kept with the camera absent" || ok "camera absent clears the failure counter"
+
+# vcam.log is append-only and nothing else rotates it.
+sandbox sup_trim
+export PSEYE_TEST_USB=present FAKE_MODE=stream
+mkdir -p "$PSEYE_STATE_DIR"
+head -c 1200000 /dev/zero | tr '\0' 'x' > "$PSEYE_STATE_DIR/vcam.log"
+"$APP/pseye" supervise >/dev/null 2>&1 &
+SUP=$!
+sleep 1.5
+kill -TERM $SUP 2>/dev/null
+wait $SUP 2>/dev/null
+sz=$(stat -f %z "$PSEYE_STATE_DIR/vcam.log" 2>/dev/null || echo 0)
+(( sz < 1048576 )) && ok "vcam.log is trimmed past 1 MB" || bad "vcam.log still ${sz} bytes"
+pkill -f "$APP/vcam.py" 2>/dev/null
+
+# The window was 6 s, i.e. three missed beats: a build that starves the process
+# for a moment killed a healthy camera. It is 10 s now.
+sandbox sup_hb10
+export PSEYE_TEST_USB=present FAKE_MODE=stale
+bash "$APP/vcam.py" >/dev/null 2>&1 &
+CHILD=$!
+sleep 1
+touch -t "$(date -v-8S '+%Y%m%d%H%M.%S')" "$PSEYE_STATE_DIR/.heartbeat"
+"$APP/pseye" supervise >/dev/null 2>&1; rc=$?
+alive_pid "$CHILD" && ok "an 8 s old heartbeat is still fresh" || bad "8 s old heartbeat killed the child"
+[[ $rc -eq 0 ]] && ok "fresh heartbeat -> supervisor exits 0" || bad "supervisor exit $rc"
+kill $CHILD 2>/dev/null
+wait $CHILD 2>/dev/null
 
 # ---------------------------------------------------------------- camera
 
