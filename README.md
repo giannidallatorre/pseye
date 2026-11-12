@@ -158,7 +158,7 @@ persists like any other setting.
 ./pseye autostart remove    # remove it
 ```
 
-`autostart install` writes `~/Library/LaunchAgents/com.pseye.watch.plist` and
+`autostart install` writes `~/Library/LaunchAgents/com.pseye.agent.plist` and
 bootstraps it into your GUI session. The agent runs `./pseye supervise` every 5
 seconds; the supervisor starts the webcam when the camera is present and stops
 it (turning the LED off) when it is unplugged. It stays idle while `./pseye off`
